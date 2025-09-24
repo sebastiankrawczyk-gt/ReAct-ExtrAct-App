@@ -1151,10 +1151,10 @@ with st.sidebar:
     st.markdown("- 📥 Export a CSV for analysis")
     st.markdown("---")
     st.markdown("**💡 Mode Guide**")
-    st.markdown("- Naive RAG: single‑pass retrieval and answer. Fastest; good for straightforward fields.")
-    st.markdown("- Iterative RAG: two‑step refinement before answering. Slower; improves precision on nuanced fields.")
+    st.markdown("- Naive RAG: single‑pass retrieval and answer. Fastest; good for straightforward fields. Lowest cost; ideal for quick demos and sanity checks.")
+    st.markdown("- Iterative RAG: two‑step refinement before answering. Slower; improves precision on nuanced fields. Balances speed and quality; reduces missed context and hallucinations.")
     
-    st.markdown("- ReAct‑ExtrAct: adds confidence cues and structured extraction. Slowest; richest outputs. Adds self‑reflection based on confidence cues before attending reconciliation meetings.")
+    st.markdown("- ReAct‑ExtrAct: adds confidence cues and structured extraction. Slowest; richest outputs. Produces citation‑backed, traceable entries; best when quality matters most.")
     st.caption("Modes trade speed for depth. Pick based on demo time and desired detail.")
     st.markdown("---")
     st.caption("You can hide this panel to maximize workspace.")
