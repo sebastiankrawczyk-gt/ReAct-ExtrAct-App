@@ -1291,7 +1291,7 @@ if page == "New Extraction":
 
         Requirements:
         - If using hosted APIs, set your API keys in the sidebar (OpenRouter or OpenAI, plus Llama Cloud for parsing).
-        - For local runs, you need both Ollama (for the LLM) and GROBID (for PDF parsing). These are disabled on the public demo.
+        - For local runs, you need both Ollama (for the LLM) and GROBID (for PDF parsing).
         """
     )
     # Allow running even if config/queries.py is empty (old behavior)
