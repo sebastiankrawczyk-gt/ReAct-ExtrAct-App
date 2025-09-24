@@ -1284,6 +1284,11 @@ if page == "New Extraction":
 
     st.markdown("---")
     st.markdown("### Step 3: Configure & Run")
+    st.error(
+        "This online demo runs in hosted mode. Local processing with Ollama and GROBID "
+        "is not available here. To use local mode, run the app on your machine with "
+        "those services installed."
+    )
     st.info(
         """
         Pick an extraction mode and start extraction.
