@@ -1099,7 +1099,6 @@ with top_cols[1]:
     nav_map = {
         "🔍✨ New Extraction": "New Extraction",
         "📊 Results Dashboard": "Results Dashboard",
-        "⚙️ Settings": "Settings",
     }
     nav_keys = list(nav_map.keys())
     nav_cols = st.columns(len(nav_keys))
@@ -1277,13 +1276,12 @@ if page == "New Extraction":
 
     st.markdown("---")
     st.markdown("### Step 3: Configure & Run")
-    st.error("This web-based demonstration is configured to work immediately, as we provide the API access for you. Please note, local processing with Ollama and GROBID isn't available in this online demo. To try out all the features, you can run the app locally.")
     st.info(
         """
         Pick an extraction mode and start extraction.
 
         Requirements:
-        - If using hosted APIs, set your API keys in the sidebar (OpenRouter or OpenAI, plus Llama Cloud for parsing).
+        - For hosted runs, API access is provided for you in this demo.
         - For local runs, you need both Ollama (for the LLM) and GROBID (for PDF parsing).
         """
     )
@@ -1310,6 +1308,8 @@ if page == "New Extraction":
     _current_label = _rev_map.get(_current_internal, "Naive RAG")
     mode_label = st.selectbox("Run mode", options=list(_mode_map.keys()), index=list(_mode_map.keys()).index(_current_label), key="wiz_mode")
     st.session_state['mode'] = _mode_map.get(mode_label, 'baseline')
+    # Hosted vs local notice moved near mode selection
+    st.error("This web-based demonstration is configured to work immediately, as we provide the API access for you. Please note, local processing with Ollama and GROBID isn't available in this online demo. To try out all the features, you can run the app locally.")
     # Optional planner heuristics override shown only for ReAct‑ExtrAct
     if st.session_state.get('mode') == 'react_extract':
         _ph_def = st.session_state.get('react_planner_heuristics', '')
@@ -1419,7 +1419,7 @@ if False and demo_run and not state.running:
         'COHERE_API_KEY': co_key,
     }
     if not _keys_ready(keys_now):
-        state.progress_stage = 'Missing API keys. Set keys in the sidebar.'
+        state.progress_stage = 'Missing API keys. In this demo, keys are provided; please try again shortly.'
     elif not any(name.lower().endswith('.pdf') for name in os.listdir(INPUT_DIR)):
         state.progress_stage = 'No PDFs found in input/. Upload or copy demo files first.'
     else:
@@ -1477,7 +1477,7 @@ if page == "New Extraction" and run_btn and not state.running:
     # Read keys from config/env
     keys_now = _read_api_keys()
     if not _keys_ready(keys_now):
-        state.progress_stage = 'Missing API keys. Set keys in the sidebar.'
+        state.progress_stage = 'Missing API keys. In this demo, keys are provided; please try again shortly.'
     elif not any(name.lower().endswith('.pdf') for name in os.listdir(INPUT_DIR)):
         state.progress_stage = 'No PDFs found in input/. Upload files first.'
     else:
@@ -2089,42 +2089,7 @@ elif page == "Results Dashboard":
                     st.warning(f"Could not save CSV to disk: {e}")
 
 elif page == "Settings":
-    st.subheader("API Keys")
-    st.info("Enter keys used for model inference and parsing. For the purposes of this demo we provide access for free.")
-    keys_init = _read_api_keys()
-    colk1, colk2 = st.columns(2)
-    with colk1:
-        or_key = st.text_input(
-            "OPENROUTER_API_KEY",
-            value="",
-            placeholder="sk-or-****************",
-            type='password',
-            help="Leave blank to keep the current key"
-        )
-        lc_key = st.text_input(
-            "LLAMA_CLOUD_API_KEY",
-            value="",
-            placeholder="llx-****************",
-            type='password',
-            help="Leave blank to keep the current key"
-        )
-    with colk2:
-        oa_key = st.text_input(
-            "OPENAI_API_KEY",
-            value="",
-            placeholder="sk-****************",
-            type='password',
-            help="Leave blank to keep the current key"
-        )
-    if st.button("Save keys"):
-        _write_api_keys({
-            'OPENROUTER_API_KEY': (or_key or keys_init.get('OPENROUTER_API_KEY','')),
-            'OPENAI_API_KEY': (oa_key or keys_init.get('OPENAI_API_KEY','')),
-            'LLAMA_CLOUD_API_KEY': (lc_key or keys_init.get('LLAMA_CLOUD_API_KEY','')),
-            'COHERE_API_KEY': keys_init.get('COHERE_API_KEY',''),
-        })
-        st.success("Saved to config/config_keys.py")
-
-    # GROBID parsing options moved to New Extraction page
+    st.subheader("Settings (view only)")
+    st.info("In this hosted demo, API access is provided and settings are locked for security. To customize keys and backends, run the app locally.")
 
 
