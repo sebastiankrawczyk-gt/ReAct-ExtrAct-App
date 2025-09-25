@@ -1099,6 +1099,7 @@ with top_cols[1]:
     nav_map = {
         "🔍✨ New Extraction": "New Extraction",
         "📊 Results Dashboard": "Results Dashboard",
+        "⚙️ Settings": "Settings",
     }
     nav_keys = list(nav_map.keys())
     nav_cols = st.columns(len(nav_keys))
