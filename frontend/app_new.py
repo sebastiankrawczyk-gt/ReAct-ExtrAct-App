@@ -1310,7 +1310,7 @@ if page == "New Extraction":
     mode_label = st.selectbox("Run mode", options=list(_mode_map.keys()), index=list(_mode_map.keys()).index(_current_label), key="wiz_mode")
     st.session_state['mode'] = _mode_map.get(mode_label, 'baseline')
     # Hosted vs local notice moved near mode selection
-    st.error("This web-based demonstration is configured to work immediately, as we provide the API access for you. Please note, local processing with Ollama and GROBID isn't available in this online demo. To try out all the features, you can run the app locally.")
+    st.error("You're currently using the hosted demo, which includes pre-configured API access for your convenience. To ensure a stable experience, advanced customization is disabled. To unlock full control and use your own keys and backends, we invite you to run the app locally.")
     # Optional planner heuristics override shown only for ReAct‑ExtrAct
     if st.session_state.get('mode') == 'react_extract':
         _ph_def = st.session_state.get('react_planner_heuristics', '')
@@ -2091,6 +2091,6 @@ elif page == "Results Dashboard":
 
 elif page == "Settings":
     st.subheader("Settings (view only)")
-    st.info("In this hosted demo, API access is provided and settings are locked for security. To customize keys and backends, run the app locally.")
+    st.info("You're currently using the hosted demo, which includes pre-configured API access for your convenience. To ensure a stable experience, advanced customization is disabled. To unlock full control and use your own keys and backends, we invite you to run the app locally.")
 
 
