@@ -1292,7 +1292,7 @@ if page == "New Extraction":
     st.markdown("- Iterative RAG: two‑step refinement before answering. Slower; improves precision on nuanced fields. Balances speed and quality; reduces missed context and hallucinations.")
     
     st.markdown("- ReAct‑ExtrAct: adds confidence cues and structured extraction. Slowest; richest outputs. Produces citation‑backed, traceable entries; best when quality matters most.")
-    st.caption("Modes trade speed for depth. Pick based on demo time and desired detail.")
+    
     st.markdown("---")
     # Allow running even if config/queries.py is empty (old behavior)
     try:
