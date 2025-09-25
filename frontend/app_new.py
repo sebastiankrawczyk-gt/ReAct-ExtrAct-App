@@ -1150,13 +1150,6 @@ with st.sidebar:
     st.markdown("- 🔎 Step 4: Select a run to inspect")
     st.markdown("- 📥 Export a CSV for analysis")
     st.markdown("---")
-    st.markdown("**💡 Mode Guide**")
-    st.markdown("- Naive RAG: single‑pass retrieval and answer. Fastest; good for straightforward fields. Lowest cost; ideal for quick demos and sanity checks.")
-    st.markdown("- Iterative RAG: two‑step refinement before answering. Slower; improves precision on nuanced fields. Balances speed and quality; reduces missed context and hallucinations.")
-    
-    st.markdown("- ReAct‑ExtrAct: adds confidence cues and structured extraction. Slowest; richest outputs. Produces citation‑backed, traceable entries; best when quality matters most.")
-    st.caption("Modes trade speed for depth. Pick based on demo time and desired detail.")
-    st.markdown("---")
     st.caption("You can hide this panel to maximize workspace.")
 
 # Remove duplicate navigation: header bar radio is the only nav
@@ -1284,7 +1277,7 @@ if page == "New Extraction":
 
     st.markdown("---")
     st.markdown("### Step 3: Configure & Run")
-    st.error("Please be aware this is a hosted demonstration. Local processing functionalities requiring Ollama and GROBID are disabled. To access all features, please run the application in a local environment.")
+    st.error("This web-based demonstration is configured to work immediately, as we provide the API access for you. Please note, local processing with Ollama and GROBID isn't available in this online demo. To try out all the features, you can run the app locally.")
     st.info(
         """
         Pick an extraction mode and start extraction.
@@ -1294,6 +1287,13 @@ if page == "New Extraction":
         - For local runs, you need both Ollama (for the LLM) and GROBID (for PDF parsing).
         """
     )
+    st.markdown("**Mode Guide**")
+    st.markdown("- Naive RAG: single‑pass retrieval and answer. Fastest; good for straightforward fields. Lowest cost; ideal for quick demos and sanity checks.")
+    st.markdown("- Iterative RAG: two‑step refinement before answering. Slower; improves precision on nuanced fields. Balances speed and quality; reduces missed context and hallucinations.")
+    
+    st.markdown("- ReAct‑ExtrAct: adds confidence cues and structured extraction. Slowest; richest outputs. Produces citation‑backed, traceable entries; best when quality matters most.")
+    st.caption("Modes trade speed for depth. Pick based on demo time and desired detail.")
+    st.markdown("---")
     # Allow running even if config/queries.py is empty (old behavior)
     try:
         _cfg_qs = [q for q in (_read_current_queries() or []) if str((q or {}).get('topic','')).strip()]
