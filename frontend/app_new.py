@@ -1201,10 +1201,10 @@ with st.sidebar:
 # Handle demo run trigger
 if page == "New Extraction":
     # In-wizard controls
-    # Invite to watch demo video above Step 1
-    st.warning("We would like to invite users to watch our demonstration video before trying our tool yourself.")
+    # Demonstration video above Step 1
     st.markdown("### Demonstration Video")
     st.video("https://youtu.be/_Mr09yTafEE")
+    st.warning("We would like to invite users to watch our demonstration video before trying our tool yourself.")
 
     st.markdown("### Step 1: Setup Project")
     st.info("First, give your project a name and upload the source documents (PDFs) that will form your corpus.")
