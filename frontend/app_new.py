@@ -1456,13 +1456,9 @@ if page == "New Extraction":
     except Exception:
         _EXEC_DEF = "qwen/qwen-2.5-7b-instruct"
     exec_opts = [
-        _EXEC_DEF,
-        "qwen/qwen-turbo",
         "qwen/qwen-2.5-7b-instruct",
-        "qwen/qwen2.5-vl-72b-instruct",
-        "google/gemini-2.0-flash-lite-001",
-        "google/gemini-2.5-flash-lite",
-        "deepseek/deepseek-chat-v3.1:free",
+        "qwen/qwen3-14b",
+        "qwen/qwen3-32b",
     ]
     exec_opts = sorted(set(exec_opts))
     if api_choice == 'openrouter':
