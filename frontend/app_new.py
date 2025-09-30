@@ -1201,6 +1201,11 @@ with st.sidebar:
 # Handle demo run trigger
 if page == "New Extraction":
     # In-wizard controls
+    # Invite to watch demo video above Step 1
+    st.warning("We would like to invite users to watch our demonstration video before trying our tool yourself.")
+    st.markdown("### Demonstration Video")
+    st.video("https://youtu.be/_Mr09yTafEE")
+
     st.markdown("### Step 1: Setup Project")
     st.info("First, give your project a name and upload the source documents (PDFs) that will form your corpus.")
     # Project name
@@ -1456,13 +1461,9 @@ if page == "New Extraction":
     except Exception:
         _EXEC_DEF = "qwen/qwen-2.5-7b-instruct"
     exec_opts = [
-        _EXEC_DEF,
-        "qwen/qwen-turbo",
         "qwen/qwen-2.5-7b-instruct",
-        "qwen/qwen2.5-vl-72b-instruct",
-        "google/gemini-2.0-flash-lite-001",
-        "google/gemini-2.5-flash-lite",
-        "deepseek/deepseek-chat-v3.1:free",
+        "qwen/qwen3-14b",
+        "qwen/qwen3-32b",
     ]
     exec_opts = sorted(set(exec_opts))
     if api_choice == 'openrouter':
