@@ -1348,7 +1348,7 @@ if page == "New Extraction":
     }
     _rev_map = {v: k for k, v in _mode_map.items()}
     # Hosted vs local notice (show above run mode)
-    st.error("You're currently using the hosted demo, which includes pre-configured API access for your convenience. To ensure a stable experience, advanced customization is disabled. To unlock full control and use your own keys and backends, we invite you to run the app locally.")
+    st.error("You're currently using the hosted demo, which includes pre-configured API access for your convenience. Ollama as well as GROBID are not available in the hosted demo. To unlock full control and use your own keys and backends, we invite you to run the app locally.")
     _current_internal = st.session_state.get('mode', 'baseline')
     _current_label = _rev_map.get(_current_internal, "Naive RAG")
     mode_label = st.selectbox("Run mode", options=list(_mode_map.keys()), index=list(_mode_map.keys()).index(_current_label), key="wiz_mode")
