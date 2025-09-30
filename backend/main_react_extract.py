@@ -1,5 +1,7 @@
 import os
 import time
+import threading
+from contextlib import contextmanager
 import json
 import argparse
 from dataclasses import dataclass, field
@@ -50,6 +52,29 @@ from utils.TraceRecorder import TraceRecorder
 # ---------------------------------------------
 # A. Document IO Utilities (reuse minimal helpers)
 # ---------------------------------------------
+
+# Concurrency caps (environment-overridable)
+GROUP_MAX_WORKERS = int(os.getenv("GROUP_MAX_WORKERS", "2"))  # concurrent groups per file
+TOPIC_MAX_WORKERS = int(os.getenv("TOPIC_MAX_WORKERS", "4"))  # concurrent topics per group
+
+# Global cap for LLM calls (hard upper bound across whole process)
+GLOBAL_MAX_WORKERS = int(os.getenv("GLOBAL_MAX_WORKERS", "8"))
+try:
+    _GLOBAL_LLM_SEM = threading.BoundedSemaphore(GLOBAL_MAX_WORKERS)
+    @contextmanager
+    def llm_slot():
+        _GLOBAL_LLM_SEM.acquire()
+        try:
+            yield
+        finally:
+            try:
+                _GLOBAL_LLM_SEM.release()
+            except Exception:
+                pass
+except Exception:
+    @contextmanager
+    def llm_slot():
+        yield
 
 def _persist_dir_for(file_stem: str) -> str:
     return os.path.join(STORAGE_PATH, f"{file_stem}_vector_index")
@@ -279,7 +304,8 @@ def _extract_gist(llm, raw_md_text: str) -> str:
         Paper (subset):
         {sample}
     """.strip()
-    return f"{llm.complete(prompt)!s}".strip()
+    with llm_slot():
+        return f"{llm.complete(prompt)!s}".strip()
 
 
 # ---------------------------------------------
@@ -320,7 +346,8 @@ def _plan_topics_enhanced(llm, file_stem: str, topics: List[str]) -> Dict[str, A
     }}
     """.strip()
 
-    raw = f"{llm.complete(prompt)!s}".strip()
+    with llm_slot():
+        raw = f"{llm.complete(prompt)!s}".strip()
     start = raw.find('{'); end = raw.rfind('}')
     json_str = raw[start:end+1] if start != -1 and end != -1 and end > start else raw
 
@@ -541,7 +568,8 @@ def _process_topic_with_tools(tools: AnnotatedToolLibrary, topic: str, topic_idx
     merged_all = _uniq_results((obs_main.get("results", []) or []) + (obs_b.get("results", []) or []))
     merged = _filter_non_reference(list(merged_all))
     contexts = [r.get("text", "") for r in merged]
-    answer = _synthesize_answer(Settings.llm, topic, contexts)
+    with llm_slot():
+        answer = _synthesize_answer(Settings.llm, topic, contexts)
     evidence = merged[:5]
     # Compute confidence on unfiltered evidence to capture weak (e.g., references) signal
     conf, clog = _deterministic_confidence(answer, merged_all[:8], prefer, avoid)
@@ -576,7 +604,8 @@ def _process_topic_with_tools(tools: AnnotatedToolLibrary, topic: str, topic_idx
         merged2_all = _uniq_results(merged_all + (obs_exp.get("results", []) or []))
         merged2 = _filter_non_reference(list(merged2_all))
         contexts = [r.get("text", "") for r in merged2]
-        answer = _synthesize_answer(Settings.llm, topic, contexts)
+        with llm_slot():
+            answer = _synthesize_answer(Settings.llm, topic, contexts)
         evidence = merged2[:5]
         conf, clog = _deterministic_confidence(answer, merged2_all[:8], prefer, avoid)
         try:
@@ -677,7 +706,8 @@ def _refine_due_to_inconsistency(tools: ToolLibrary, topic: str, current_answer:
         best_merge = _uniq_results(best_merge + (obs.get("results", []) or []))
     evidence = best_merge[:5]
     # Verify the existing answer without changing it
-    verdict = tools.validate_answer(topic, current_answer)
+    with llm_slot():
+        verdict = tools.validate_answer(topic, current_answer)
     conf = 0.85 if verdict.get("supported") else (0.5 if current_answer else 0.2)
     merged_ev = (verdict.get("evidence") or [])[:4]
     if len(merged_ev) < 4:
@@ -742,7 +772,7 @@ def run_agent_grouped(file_stem: str, query_engine, topics: List[str], plan: Dic
     def _run_group(grp: List[str]) -> Dict[str, Dict[str, Any]]:
         group_results: Dict[str, Dict[str, Any]] = {}
         # Initial per-topic runs (single-step expansion if needed)
-        with ThreadPoolExecutor(max_workers=min(8, max(1, len(grp)))) as pool:
+        with ThreadPoolExecutor(max_workers=min(TOPIC_MAX_WORKERS, max(1, len(grp)))) as pool:
             futs = {}
             for idx, t in enumerate(grp):
                 qlist = plan.get("queries_by_topic", {}).get(t, [t])
@@ -818,7 +848,8 @@ def run_agent_grouped(file_stem: str, query_engine, topics: List[str], plan: Dic
             {topics_block}
             """.strip()
             try:
-                raw = f"{Settings.llm.complete(prompt)!s}".strip()
+                with llm_slot():
+                    raw = f"{Settings.llm.complete(prompt)!s}".strip()
                 s = raw.find('{'); e = raw.rfind('}')
                 j = raw[s:e+1] if s != -1 and e != -1 and e > s else raw
                 data = json.loads(j)
@@ -864,7 +895,8 @@ def run_agent_grouped(file_stem: str, query_engine, topics: List[str], plan: Dic
                     merged_all = _uniq_results((group_results.get(t, {}).get("evidence") or []) + (obs.get("results", []) or []))
                     merged = _filter_non_reference(list(merged_all))
                     contexts = [r.get("text", "") for r in merged]
-                    ans = _synthesize_answer(Settings.llm, t, contexts)
+                    with llm_slot():
+                        ans = _synthesize_answer(Settings.llm, t, contexts)
                     ev = merged[:5]
                     conf, clog = _deterministic_confidence(ans, merged_all[:8], plan.get("guide", {}).get("prefer", []), plan.get("guide", {}).get("avoid", []))
                     prev = group_results.get(t, {})
@@ -907,7 +939,7 @@ def run_agent_grouped(file_stem: str, query_engine, topics: List[str], plan: Dic
 
     # Execute groups concurrently; topics inside each group are processed concurrently by _run_group
     group_results_list: List[Dict[str, Dict[str, Any]]] = []
-    with ThreadPoolExecutor(max_workers=min(4, max(1, len(base_groups)))) as pool:
+    with ThreadPoolExecutor(max_workers=min(GROUP_MAX_WORKERS, max(1, len(base_groups)))) as pool:
         futs = {pool.submit(_run_group, grp): tuple(grp) for grp in base_groups if grp}
         for fut in as_completed(futs):
             try:
@@ -952,7 +984,8 @@ def run_agent_grouped(file_stem: str, query_engine, topics: List[str], plan: Dic
                 merged_all = _uniq_results((payload.get(t, {}).get("evidence") or []) + (obs.get("results", []) or []))
                 merged = _filter_non_reference(list(merged_all))
                 contexts = [r.get("text", "") for r in merged]
-                ans = _synthesize_answer(Settings.llm, t, contexts)
+                with llm_slot():
+                    ans = _synthesize_answer(Settings.llm, t, contexts)
                 ev = merged[:5]
                 conf, clog = _deterministic_confidence(ans, merged_all[:8], plan.get("guide", {}).get("prefer", []), plan.get("guide", {}).get("avoid", []))
                 prev = payload.get(t, {})
@@ -1009,7 +1042,8 @@ def run_agent_grouped(file_stem: str, query_engine, topics: List[str], plan: Dic
                 - Return just the answer as plain text.
                 """.strip()
         try:
-            return f"{Settings.llm.complete(prompt)!s}".strip()
+            with llm_slot():
+                return f"{Settings.llm.complete(prompt)!s}".strip()
         except Exception:
             return answer
     for t, v in payload.items():
@@ -1114,6 +1148,13 @@ def main():
     else:
         raise ValueError("Unsupported EMBEDDING_API. Choose 'openai' or 'ollama'.")
 
+    # Quick environment checks
+    try:
+        print(f"[check] api={API} emb_api={EMBEDDING_API} exec_model={EXECUTION_MODEL} emb_model={EMBEDDING_MODEL}")
+        print(f"[check] keys: OPENROUTER={bool(OPENROUTER_API_KEY)} OPENAI={bool(OPENAI_API_KEY)} LLAMA_CLOUD={bool(LLAMA_CLOUD_API_KEY)}")
+    except Exception:
+        pass
+
     tracker = TokenTracker()
     tracker.install()
 
@@ -1128,6 +1169,7 @@ def main():
         if not files:
             print(f"No file matched --file={args.file_stem}. Available examples: {', '.join(sorted(files)[:5])}")
             return
+    print(f"[check] files={len(files)} input_path={INPUT_PATH}")
     topics_all = [q.get("topic", "") for q in QUERIES]
     topics = list(topics_all)
     if args.topics:
@@ -1143,9 +1185,14 @@ def main():
                 selected.extend(sel)
         topics = list(dict.fromkeys(selected)) or topics_all
     max_conc = int(args.concurrency if args.concurrency is not None else (CFG_CONCURRENCY if isinstance(CFG_CONCURRENCY, int) else 3))
+    print(f"[check] topics={len(topics)} concurrency={max_conc}")
 
     def _process_file(file_stem: str) -> None:
         print(f"\nProcessing file: {file_stem}")
+        try:
+            print(f"[parse] {file_stem}: starting markdown parsing")
+        except Exception:
+            pass
         query_engine = VectorQueryEngineCreator(
             llama_parse_api_key=LLAMA_CLOUD_API_KEY,
             cohere_api_key=COHERE_API_KEY,
@@ -1155,9 +1202,21 @@ def main():
             embedding_model_name=EMBEDDING_MODEL,
             response_mode="compact",
         ).get_query_engine(file_stem)
+        try:
+            print(f"[engine] {file_stem}: query engine ready")
+        except Exception:
+            pass
 
         trace = recorder.for_file(file_stem)
+        try:
+            print(f"[plan] {file_stem}: planning extraction strategy")
+        except Exception:
+            pass
         plan = _plan_topics_enhanced(Settings.llm, file_stem, topics)
+        try:
+            print(f"[plan] {file_stem}: groups={len(plan.get('groups') or [])} order_len={len(plan.get('order') or [])}")
+        except Exception:
+            pass
         try:
             trace.record(
                 "plan",
@@ -1181,18 +1240,36 @@ def main():
         if not ordered:
             ordered = list(topics)
 
+        try:
+            print(f"[execute] {file_stem}: executing queries — please wait…")
+        except Exception:
+            pass
         result = run_agent_grouped(file_stem, query_engine, ordered, plan, out_dir=out_dir)
+        # Quick result stats
+        try:
+            payload_dbg = (result or {}).get("extracted_data", {})
+            answered = sum(1 for v in (payload_dbg or {}).values() if (v or {}).get("answer"))
+            print(f"[result] {file_stem}: answered_topics={answered}/{len(ordered)}")
+        except Exception:
+            pass
         # Save native result
-        with open(os.path.join(out_dir, f"{file_stem}_result.json"), "w", encoding="utf-8") as f:
-            json.dump(result, f, ensure_ascii=False, indent=2)
+        try:
+            res_path = os.path.join(out_dir, f"{file_stem}_result.json")
+            with open(res_path, "w", encoding="utf-8") as f:
+                json.dump(result, f, ensure_ascii=False, indent=2)
+            print(f"[save] wrote {res_path}")
+        except Exception as e:
+            print(f"[save-error] result.json: {e}")
         # Save baseline-compatible result alongside
         try:
             payload = (result or {}).get("extracted_data", {})
             baseline_like = _to_baseline_compatible_results(file_stem, ordered, payload)
-            with open(os.path.join(out_dir, f"{file_stem}_baseline_like.json"), "w", encoding="utf-8") as f:
+            bl_path = os.path.join(out_dir, f"{file_stem}_baseline_like.json")
+            with open(bl_path, "w", encoding="utf-8") as f:
                 json.dump(baseline_like, f, ensure_ascii=False, indent=2)
-        except Exception:
-            pass
+            print(f"[save] wrote {bl_path}")
+        except Exception as e:
+            print(f"[save-error] baseline_like.json: {e}")
 
     # Process files concurrently (configurable)
     with ThreadPoolExecutor(max_workers=max_conc) as pool:

@@ -216,6 +216,37 @@ def _discover_results(run_dir_name: str) -> Dict[str, Dict[str, Any]]:
     return out
 
 
+# --- Validation persistence (per run, per paper, per topic) ---
+def _validation_path(run_dir_name: str) -> str:
+    return os.path.join(OUTPUT_DIR, run_dir_name, 'validation.json')
+
+def _read_validation(run_dir_name: Optional[str]) -> Dict[str, Dict[str, bool]]:
+    if not run_dir_name:
+        return {}
+    try:
+        p = _validation_path(run_dir_name)
+        if os.path.isfile(p):
+            with open(p, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                if isinstance(data, dict):
+                    return data  # {paper: {topic: bool}}
+    except Exception:
+        pass
+    return {}
+
+def _write_validation(run_dir_name: Optional[str], data: Dict[str, Dict[str, bool]]) -> None:
+    if not run_dir_name:
+        return
+    try:
+        out_dir = os.path.join(OUTPUT_DIR, run_dir_name)
+        os.makedirs(out_dir, exist_ok=True)
+        p = _validation_path(run_dir_name)
+        with open(p, 'w', encoding='utf-8') as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+    except Exception:
+        pass
+
+
 def _ensure_llm_ready() -> None:
     try:
         if getattr(Settings, 'llm', None) is not None and getattr(Settings, 'embed_model', None) is not None:
@@ -557,6 +588,27 @@ def _write_run_name(run_dir_name: str, name: str) -> None:
         pass
 
 
+def _extract_run_timestamp(run_dir_name: str) -> Optional[str]:
+    try:
+        import re as _re
+        m = _re.match(r"^(\d{4}\.\d{2}\.\d{2}_\d{2}\.\d{2}\.\d{2})", run_dir_name)
+        if m:
+            return m.group(1)
+    except Exception:
+        pass
+    return None
+
+
+def _format_run_display(run_dir_name: str) -> str:
+    nm = _read_run_name(run_dir_name)
+    ts = _extract_run_timestamp(run_dir_name)
+    if nm and ts:
+        return f"{nm} ({ts})"
+    if nm:
+        return nm
+    return run_dir_name
+
+
 def _slugify_name(name: str) -> str:
     try:
         s = (name or '').strip().lower()
@@ -810,16 +862,9 @@ def _run_script(mode: str, state: RunState, eval_off: bool = False, clear_storag
         before_runs = _list_run_dirs()
         script = _pick_main_script(mode)
         state.script_path = script
-        # seed buffer with command + env debug (mask keys)
-        masked_keys = {k: ('***' if v else '') for k, v in _read_api_keys().items()}
-        dbg = [
-            f"[debug] cwd={REPO_ROOT}",
-            f"[debug] script={script}",
-            f"[debug] pdfs={state.files_total}",
-            f"[debug] keys_present={{k:bool(v) for k,v in {masked_keys}.items()}}",
-        ]
-        buf: List[str] = [line + "\n" for line in dbg]
-        state.stdout = ''.join(buf)[-8000:]
+        # start with empty buffer (suppress debug preamble)
+        buf: List[str] = []
+        state.stdout = ''
 
         env_vars = dict(os.environ)
         env_vars['PYTHONUNBUFFERED'] = '1'
@@ -955,8 +1000,7 @@ def _curate_runs() -> Tuple[List[str], Dict[str, str]]:
     all_runs = _list_run_dirs()
     # map to display name using optional run_name.txt
     def _display_for(r: str) -> str:
-        nm = _read_run_name(r)
-        return f"{nm} ({r})" if nm else r
+        return _format_run_display(r)
     session_runs = [r for r in (st.session_state.get('session_runs') or []) if r in all_runs]
     # pick one baseline run from history (latest by sort order)
     demo_dir = next((r for r in all_runs if r.endswith('_baseline')), None)
@@ -1158,7 +1202,7 @@ with st.sidebar:
 if page == "New Extraction":
     # In-wizard controls
     st.markdown("### Step 1: Setup Project")
-    st.info("First, give your project a name and upload the source documents (PDFs) that will form your corpus. Once uploaded, you can define multiple extraction fields and run them against this document set.")
+    st.info("First, give your project a name and upload the source documents (PDFs) that will form your corpus.")
     # Project name
     proj_cols = st.columns([2, 2, 2])
     with proj_cols[0]:
@@ -1182,23 +1226,21 @@ if page == "New Extraction":
     st.markdown("### Step 2: Define Extraction Fields")
     st.info(
         """
-        1. Define Your Extraction Fields
+        **1. Define Your Extraction Fields**
 
         Start by specifying the data items you want to extract. For each field, list the specific information you're looking for. The more specific, the better the results.
 
-        Examples: Algorithms, Datasets, Evaluation Metrics
+        
+        **2. Provide Codes for Automated Categorization**
+
+        To use our LLM-assisted inductive coding feature, you must provide a list of Codes for each extraction field you defined above. The system will use these codes to categorize the content it extracts, returning concise and structured answers based on your list. If codes are not provided, a concise answer will be a simple summary of the final answer. **Warning:** The concise-answer feature, in particular if codes are not provided, might contain errors.
 
 
-        2. Provide Codes for Automated Categorization
-
-        To use our LLM-assisted inductive coding feature, you must provide a list of Codes for each extraction field you defined above. The system will use these codes to categorize the content it extracts, returning concise and structured answers based on your list. If codes are not provided, a concise answer will be a simple summary of the final answer.
-
-
-        3. How to Get the Best Results
+        **3. How to Get the Best Results**
 
         This tool uses Retrieval-Augmented Generation (RAG), which performs best when you provide specific, context-rich questions rather than a simple list of keywords.
 
-        💡 Tips for Precise Data Extraction:
+        **💡 Tips for Precise Data Extraction:**
 
         - Frame it as a research question. Treat each extraction field as a clear, unambiguous question you would ask a research assistant.
         - Include protocol concepts. Incorporate terms from your review protocol (e.g., Population, Intervention, Outcomes) to anchor the system's retrieval process and improve accuracy.
@@ -1305,12 +1347,12 @@ if page == "New Extraction":
         "ReAct-ExtrAct": "react_extract",
     }
     _rev_map = {v: k for k, v in _mode_map.items()}
+    # Hosted vs local notice (show above run mode)
+    st.error("You're currently using the hosted demo, which includes pre-configured API access for your convenience. To ensure a stable experience, advanced customization is disabled. To unlock full control and use your own keys and backends, we invite you to run the app locally.")
     _current_internal = st.session_state.get('mode', 'baseline')
     _current_label = _rev_map.get(_current_internal, "Naive RAG")
     mode_label = st.selectbox("Run mode", options=list(_mode_map.keys()), index=list(_mode_map.keys()).index(_current_label), key="wiz_mode")
     st.session_state['mode'] = _mode_map.get(mode_label, 'baseline')
-    # Hosted vs local notice moved near mode selection
-    st.error("You're currently using the hosted demo, which includes pre-configured API access for your convenience. To ensure a stable experience, advanced customization is disabled. To unlock full control and use your own keys and backends, we invite you to run the app locally.")
     # Optional planner heuristics override shown only for ReAct‑ExtrAct
     if st.session_state.get('mode') == 'react_extract':
         _ph_def = st.session_state.get('react_planner_heuristics', '')
@@ -1336,6 +1378,35 @@ if page == "New Extraction":
         from config.config import API as _API_DEF, EMBEDDING_API as _EAPI_DEF, OLLAMA_BASE_URL as _OLLAMA_URL_DEF, OLLAMA_EXECUTION_MODEL as _OLLAMA_EXEC_DEF, OLLAMA_EMBEDDING_MODEL as _OLLAMA_EMB_DEF
     except Exception:
         _API_DEF, _EAPI_DEF, _OLLAMA_URL_DEF, _OLLAMA_EXEC_DEF, _OLLAMA_EMB_DEF = 'openrouter', 'openai', 'http://localhost:11434', 'llama3.1:8b-instruct', 'nomic-embed-text'
+    # Parsing Options (GROBID) — move above providers
+    try:
+        from config.config import USE_GROBID as _DEF_USE_GROBID, GROBID_URL as _DEF_GROBID_URL
+    except Exception:
+        _DEF_USE_GROBID, _DEF_GROBID_URL = False, "http://localhost:8070"
+    pg_cols = st.columns([1,2,1])
+    with pg_cols[0]:
+        use_grobid = st.toggle("Use GROBID Parser", value=bool(os.getenv('USE_GROBID') == '1') or _DEF_USE_GROBID, key="wiz_use_grobid")
+        os.environ['USE_GROBID'] = '1' if use_grobid else '0'
+    with pg_cols[1]:
+        if use_grobid:
+            grobid_url = st.text_input("GROBID URL", value=(os.getenv('GROBID_URL') or _DEF_GROBID_URL), key="wiz_grobid_url")
+            if grobid_url:
+                os.environ['GROBID_URL'] = grobid_url
+    with pg_cols[2]:
+        if use_grobid:
+            if st.button("Check GROBID status"):
+                try:
+                    import requests  # type: ignore
+                    url = (os.getenv('GROBID_URL') or _DEF_GROBID_URL).rstrip('/') + '/api/isalive'
+                    r = requests.get(url, timeout=8)
+                    if r.status_code == 200:
+                        st.success("GROBID is alive")
+                    else:
+                        st.warning(f"GROBID not healthy (HTTP {r.status_code})")
+                except Exception as e:
+                    st.error(f"GROBID check failed: {e}")
+
+    # Providers and models below GROBID
     prov_cols = st.columns([1,1,2])
     with prov_cols[0]:
         api_choice = st.selectbox("LLM Provider", options=["openrouter","ollama"], index=["openrouter","ollama"].index(_API_DEF) if _API_DEF in ["openrouter","ollama"] else 0, key="wiz_api")
@@ -1344,46 +1415,40 @@ if page == "New Extraction":
         eapi_choice = st.selectbox("Embedding Provider", options=["openai","ollama"], index=["openai","ollama"].index(_EAPI_DEF) if _EAPI_DEF in ["openai","ollama"] else 0, key="wiz_eapi")
         os.environ['EMBEDDING_API'] = eapi_choice
     with prov_cols[2]:
-        if api_choice == 'ollama' or eapi_choice == 'ollama':
-            oll_cols = st.columns([2,2,2])
-            with oll_cols[0]:
-                obase = st.text_input("OLLAMA_BASE_URL", value=os.getenv('OLLAMA_BASE_URL') or _OLLAMA_URL_DEF, key="wiz_ollama_base")
-                if obase:
-                    os.environ['OLLAMA_BASE_URL'] = obase
-            with oll_cols[1]:
-                oexec = st.text_input("Ollama Exec Model", value=os.getenv('OLLAMA_EXECUTION_MODEL') or _OLLAMA_EXEC_DEF, key="wiz_ollama_exec")
-                if oexec:
-                    os.environ['OLLAMA_EXECUTION_MODEL'] = oexec
-            with oll_cols[2]:
-                oemb = st.text_input("Ollama Embedding Model", value=os.getenv('OLLAMA_EMBEDDING_MODEL') or _OLLAMA_EMB_DEF, key="wiz_ollama_emb")
-                if oemb:
-                    os.environ['OLLAMA_EMBEDDING_MODEL'] = oemb
+        st.empty()
 
-    # Parsing Options (GROBID) — moved here from Settings
-    try:
-        from config.config import USE_GROBID as _DEF_USE_GROBID, GROBID_URL as _DEF_GROBID_URL
-    except Exception:
-        _DEF_USE_GROBID, _DEF_GROBID_URL = False, "http://localhost:8070"
-    pg_cols = st.columns([1,2,1])
-    with pg_cols[0]:
-        use_grobid = st.toggle("Use GROBID pre-parser", value=bool(os.getenv('USE_GROBID') == '1') or _DEF_USE_GROBID, key="wiz_use_grobid")
-        os.environ['USE_GROBID'] = '1' if use_grobid else '0'
-    with pg_cols[1]:
-        grobid_url = st.text_input("GROBID URL", value=(os.getenv('GROBID_URL') or _DEF_GROBID_URL), key="wiz_grobid_url")
-        if grobid_url:
-            os.environ['GROBID_URL'] = grobid_url
-    with pg_cols[2]:
-        if st.button("Check GROBID status"):
-            try:
-                import requests  # type: ignore
-                url = (os.getenv('GROBID_URL') or _DEF_GROBID_URL).rstrip('/') + '/api/isalive'
-                r = requests.get(url, timeout=8)
-                if r.status_code == 200:
-                    st.success("GROBID is alive")
-                else:
-                    st.warning(f"GROBID not healthy (HTTP {r.status_code})")
-            except Exception as e:
-                st.error(f"GROBID check failed: {e}")
+    # Ollama settings block below providers
+    if api_choice == 'ollama' or eapi_choice == 'ollama':
+        oll_cols = st.columns([2,2,2,1])
+        with oll_cols[0]:
+            obase = st.text_input("Ollama URL", value=os.getenv('OLLAMA_BASE_URL') or _OLLAMA_URL_DEF, key="wiz_ollama_base")
+            if obase:
+                os.environ['OLLAMA_BASE_URL'] = obase
+        with oll_cols[1]:
+            oexec = st.text_input("Ollama Exec Model", value=os.getenv('OLLAMA_EXECUTION_MODEL') or _OLLAMA_EXEC_DEF, key="wiz_ollama_exec")
+            if oexec:
+                os.environ['OLLAMA_EXECUTION_MODEL'] = oexec
+        with oll_cols[2]:
+            oemb = st.text_input("Ollama Embedding Model", value=os.getenv('OLLAMA_EMBEDDING_MODEL') or _OLLAMA_EMB_DEF, key="wiz_ollama_emb")
+            if oemb:
+                os.environ['OLLAMA_EMBEDDING_MODEL'] = oemb
+        with oll_cols[3]:
+            if st.button("Check Ollama status"):
+                try:
+                    import requests  # type: ignore
+                    base = (os.getenv('OLLAMA_BASE_URL') or _OLLAMA_URL_DEF).rstrip('/')
+                    url = base + '/api/version'
+                    r = requests.get(url, timeout=8)
+                    if r.status_code == 200:
+                        try:
+                            ver = r.json().get('version')
+                            st.success(f"Ollama is alive (version: {ver or 'unknown'})")
+                        except Exception:
+                            st.success("Ollama is alive")
+                    else:
+                        st.warning(f"Ollama not healthy (HTTP {r.status_code})")
+                except Exception as e:
+                    st.error(f"Ollama check failed: {e}")
 
     # Executor (execution model) selection
     try:
@@ -1396,6 +1461,7 @@ if page == "New Extraction":
         "qwen/qwen-2.5-7b-instruct",
         "qwen/qwen2.5-vl-72b-instruct",
         "google/gemini-2.0-flash-lite-001",
+        "google/gemini-2.5-flash-lite",
         "deepseek/deepseek-chat-v3.1:free",
     ]
     exec_opts = sorted(set(exec_opts))
@@ -1561,56 +1627,71 @@ if page == "New Extraction" and run_btn and not state.running:
 if page == "New Extraction":
     left = st.container()
     with left:
-        st.subheader("Progress")
-        gif_col1, gif_col2 = st.columns([4, 1])
-        with gif_col1:
-            progress_ph = st.empty()
-            show_progress = bool(state.running or state.progress_pct > 0 or state.progress_stage)
-            if show_progress:
-                # Ensure a minimally visible bar while running
-                _disp_pct = max(5, int(state.progress_pct)) if state.running else int(state.progress_pct)
-                # Derive a robust stage label from recent logs to avoid being stuck on "Launching..."
-                recent = (state.stdout or '').splitlines()[-200:]
-                recent_join = "\n".join(recent)
-                display_stage = state.progress_stage or ''
-                if state.running:
-                    try:
-                        import re as _re
-                        if any((l.strip().startswith('Evaluating:') or 'RAGAS evaluation' in l) for l in recent[-100:]):
-                            display_stage = 'Evaluating answers'
-                        elif any(_re.search(r"Query\s*\[\d+/\d+\]", l) for l in recent[-200:]):
-                            display_stage = 'Querying your documents'
-                        elif any('loading existing index' in l for l in recent[-200:]):
-                            display_stage = 'Loading vector index'
-                        elif any('building VectorStoreIndex' in l or 'persisted index' in l for l in recent[-200:]):
-                            display_stage = 'Building vector index'
-                        elif any(l.startswith('[parse]') or 'Started parsing the file' in l for l in recent[-200:]):
-                            display_stage = 'Parsing documents'
-                        elif any('Processing file:' in l for l in recent[-200:]):
-                            display_stage = 'Preparing documents'
-                        elif not display_stage:
-                            display_stage = 'Initializing...'
-                    except Exception:
-                        pass
-                else:
-                    # Respect completion/failure when run is finished
-                    if state.exit_code is not None and state.exit_code != 0:
-                        display_stage = 'Failed'
-                    elif (state.progress_pct >= 100) or (not display_stage):
-                        display_stage = 'Completed'
-                # Render progress; show label below for compatibility across Streamlit versions
-                progress_ph.progress(_disp_pct)
-                pct_txt = f"{_disp_pct}%" if _disp_pct else ""
-                if display_stage or pct_txt:
-                    st.write(f"{pct_txt} {display_stage}".strip())
-                # (Removed elapsed time display by request)
+        st.subheader("Live Status")
+        progress_ph = st.empty()
+        show_progress = bool(state.running or state.progress_pct > 0 or state.progress_stage)
+        if show_progress:
+            # Ensure a minimally visible bar while running
+            _disp_pct = max(5, int(state.progress_pct)) if state.running else int(state.progress_pct)
+            # Derive a robust stage label from recent logs to avoid being stuck on "Launching..."
+            recent = (state.stdout or '').splitlines()[-200:]
+            recent_join = "\n".join(recent)
+            display_stage = state.progress_stage or ''
+            if state.running:
+                try:
+                    import re as _re
+                    # Highest priority: evaluation, then active query loop
+                    if any((l.strip().startswith('Evaluating:') or 'RAGAS evaluation' in l) for l in recent[-100:]):
+                        display_stage = 'Evaluating answers'
+                    elif any(_re.search(r"Query\s*\[\d+/\d+\]", l) for l in recent[-200:]):
+                        display_stage = 'Querying your documents'
+                    # New backend hints: executing/planning/engine
+                    elif any(l.strip().startswith('[execute]') for l in recent[-200:]):
+                        display_stage = 'Executing queries — please wait…'
+                    elif any(l.strip().startswith('[plan]') for l in recent[-200:]):
+                        display_stage = 'Planning'
+                    elif any(l.strip().startswith('[engine]') for l in recent[-200:]):
+                        display_stage = 'Query engine ready'
+                    # Indexing/IO stages
+                    elif any('loading existing index' in l for l in recent[-200:]):
+                        display_stage = 'Loading vector index'
+                    elif any('building VectorStoreIndex' in l or 'persisted index' in l for l in recent[-200:]):
+                        display_stage = 'Building vector index'
+                    elif any(l.startswith('[parse]') or 'Started parsing the file' in l for l in recent[-200:]):
+                        display_stage = 'Parsing documents'
+                    elif any('Processing file:' in l for l in recent[-200:]):
+                        display_stage = 'Preparing documents'
+                    elif not display_stage:
+                        display_stage = 'Initializing...'
+                except Exception:
+                    pass
             else:
-                progress_ph.empty()
-        with gif_col2:
+                # Respect completion/failure when run is finished
+                if state.exit_code is not None and state.exit_code != 0:
+                    display_stage = 'Failed'
+                elif (state.progress_pct >= 100) or (not display_stage):
+                    display_stage = 'Completed'
+            # Render concise status and place spinner directly below
+            status_txt = display_stage or 'Working...'
+            progress_ph.markdown(f"**{status_txt}**")
             if state.running:
                 st.image("https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExdDJjZ3JqZTV1ZzNkM2k4MHNobDBmYmdkZmQ4eWJ6b2sxajBodW4xMiZlcD12MV9naWZzX3NlYXJjaCZjdD1n/3oEjI6SIIHBdRxXI40/giphy.gif", width=120)
             else:
-                st.empty()
+                # One-time completion/failure notification
+                try:
+                    notif_key = f"completed_notified__{state.run_dir_name or 'current'}"
+                except Exception:
+                    notif_key = "completed_notified__current"
+                already = bool(st.session_state.get(notif_key))
+                if not already:
+                    if display_stage == 'Completed' and (state.exit_code is None or state.exit_code == 0):
+                        st.success("Completed ✅")
+                        st.session_state[notif_key] = True
+                    elif display_stage == 'Failed' or (state.exit_code and state.exit_code != 0):
+                        st.error("Failed ❌")
+                        st.session_state[notif_key] = True
+        else:
+            progress_ph.empty()
 
         with st.expander("Logs of the system", expanded=False):
             st.code(state.stdout or "(no logs yet)")
@@ -1643,8 +1724,18 @@ if page == "New Extraction":
     # Show a simple selector bar (newest to oldest). Do not auto-select a run.
     runs_list = _list_run_dirs()
     sentinel = "— Select a run —"
-    sel_opt = st.selectbox("Select extraction to view", options=[sentinel] + runs_list, index=0, key="new_run_selected_run")
-    selected_run = None if sel_opt == sentinel else sel_opt
+    runs_display = [_format_run_display(r) for r in runs_list]
+    display_to_real = {d: r for d, r in zip(runs_display, runs_list)}
+    sel_opt = st.selectbox("Select extraction to view", options=[sentinel] + runs_display, index=0, key="new_run_selected_run")
+    selected_run = None if sel_opt == sentinel else display_to_real.get(sel_opt)
+    # Keep selected run in session so Inspector writes validation to the same run
+    if selected_run:
+        st.session_state['selected_run'] = selected_run
+    else:
+        try:
+            st.session_state.pop('selected_run', None)
+        except Exception:
+            pass
     if selected_run:
         data = _discover_results(selected_run)
         # Quick diagnostics
@@ -1683,22 +1774,45 @@ if page == "New Extraction":
             fdf = df[df['paper'].isin(sel_papers)] if sel_papers else df
             visible_topics = [t for t in topic_columns if t in (sel_topics or topic_columns)]
 
-            # Header row: Paper | visible topics
-            header_cols = st.columns([1.2] + [2.2] * len(visible_topics))
+            # Pagination controls for topics (fields)
+            topics_per_page = st.number_input(
+                "Fields per page",
+                min_value=1,
+                max_value=50,
+                value=10,
+                step=1,
+                key="new_run_topics_per_page",
+            )
+            num_pages = max(1, (len(visible_topics) + topics_per_page - 1) // topics_per_page)
+            page_index = st.number_input(
+                "Page",
+                min_value=1,
+                max_value=num_pages,
+                value=1,
+                step=1,
+                key="new_run_topics_page",
+            )
+            start_idx = (page_index - 1) * topics_per_page
+            end_idx = start_idx + topics_per_page
+            page_topics = visible_topics[start_idx:end_idx]
+            st.caption(f"Showing fields {start_idx + 1}–{min(end_idx, len(visible_topics))} of {len(visible_topics)}")
+
+            # Header row: Paper | paginated topics
+            header_cols = st.columns([1.2] + [2.2] * len(page_topics))
             with header_cols[0]:
                 st.markdown("**Paper**")
-            for j, t in enumerate(visible_topics):
+            for j, t in enumerate(page_topics):
                 with header_cols[j+1]:
                     st.markdown(f"**{t}**")
 
             # Data rows
             for ridx, row in fdf.iterrows():
                 paper_nm = row['paper']
-                row_cols = st.columns([1.2] + [2.2] * len(visible_topics))
+                row_cols = st.columns([1.2] + [2.2] * len(page_topics))
                 with row_cols[0]:
                     short_paper = (paper_nm[:26] + '…') if len(paper_nm) > 28 else paper_nm
                     st.write(short_paper)
-                for j, t in enumerate(visible_topics):
+                for j, t in enumerate(page_topics):
                     ans_preview = str(row.get(t, '') or '')
                     label = (ans_preview[:85] + '…') if len(ans_preview) > 88 else (ans_preview or "(empty)")
                     btn_key = f"new_run_tbl_btn__{paper_nm}__{t}__{ridx}__{j}"
@@ -1752,6 +1866,16 @@ if page == "New Extraction":
                 if (result.get('code') or '').strip():
                     st.markdown("**Code**")
                     st.write(result.get('code') or '')
+                # Validation toggle (per run / paper / topic)
+                selected_run = st.session_state.get('selected_run') or st.session_state.get('current_run_dir') or st.session_state.get('run_dir_name')
+                val_data = _read_validation(selected_run)
+                was_valid = bool(((val_data.get(paper) or {}).get(topic)))
+                new_valid = st.toggle("Validated", value=was_valid, key=f"val_new_{paper}_{topic}")
+                if new_valid != was_valid:
+                    val_for_paper = val_data.get(paper) or {}
+                    val_for_paper[topic] = bool(new_valid)
+                    val_data[paper] = val_for_paper
+                    _write_validation(selected_run, val_data)
                 # Then evidence
                 st.markdown("**Evidence**")
                 bclist = (result.get('best_context') or [])
@@ -1773,9 +1897,11 @@ if page == "New Extraction":
                     fu_mode = st.selectbox("Mode", options=["Quick", "Iterative (2 steps)"] , key="new_run_insp_fu_mode")
                 with fu_cols[2]:
                     ask = st.button("Ask", key="new_run_insp_fu_ask")
+                    fu_status = st.empty()
                 if ask and (fu_q or '').strip():
-                    with st.spinner("Querying index…"):
-                        resp = _run_followup_query(paper, fu_q.strip(), fu_mode)
+                    fu_status.info("Querying index…")
+                    resp = _run_followup_query(paper, fu_q.strip(), fu_mode)
+                    fu_status.empty()
                     st.markdown("**Follow-up Answer**")
                     st.write(resp.get('answer') or '')
                     st.markdown("**Supporting contexts**")
@@ -1798,12 +1924,14 @@ if page == "New Extraction":
                     else:
                         st.markdown("---")
                         _render_inspector_body_new(ipaper, itopic)
+                # Close inspector after rendering to avoid re-opening on refresh
+                st.session_state['inspector_open'] = False
         else:
             st.warning("No answers found for this run. Ensure the run completed and wrote <paper>_result.json files.")
 
         st.markdown("---")
         st.markdown("### Step 5: Export CSV")
-        st.caption("Choose which papers and fields to include. You can optionally add code and top context columns to the export.")
+        st.caption("Choose which papers, fields, and columns to include in the CSV.")
         # Paper and field selection for export
         exp_papers = st.multiselect(
             "Select papers to include",
@@ -1812,15 +1940,20 @@ if page == "New Extraction":
             key="new_run_exp_papers",
         )
         exp_cols = st.multiselect("Select fields (topics) to include", options=topic_columns, default=topic_columns, key="new_run_exp_cols")
-        col_flags = st.columns(3)
-        with col_flags[0]:
-            include_code = st.checkbox("Include code columns", value=False, key="new_run_include_code")
-        with col_flags[1]:
-            include_ctx = st.checkbox("Include top context", value=False, key="new_run_include_ctx")
-        with col_flags[2]:
-            include_score = st.checkbox("Include top context score", value=False, key="new_run_include_score")
-
-        save_to_disk = st.checkbox("Also save to this run's folder", value=False, key="new_run_save_disk")
+        col_types = st.multiselect(
+            "Columns to include per field",
+            options=[
+                "Concise answer",
+                "Full answer",
+                "Code",
+                "Top context",
+                "Top context score",
+                "Validated",
+            ],
+            default=["Full answer"],
+            key="new_run_col_types",
+            help="Pick which columns you want for each field in the CSV.",
+        )
         out_rows: List[Dict[str, Any]] = []
         for paper, payload in data.items():
             if exp_papers and paper not in exp_papers:
@@ -1830,18 +1963,23 @@ if page == "New Extraction":
             row: Dict[str, Any] = {"paper": paper}
             for t in exp_cols:
                 r = by_topic.get(t)
-                conc = r.get('answer_concise') or ''
                 full = r.get('answer') or ''
-                row[f"CONCISE ANSWER: {t}"] = conc
-                row[f"FULL ANSWER: {t}"] = full
-                if include_code:
+                if "Concise answer" in col_types:
+                    row[f"CONCISE ANSWER: {t}"] = (r.get('answer_concise') if r else '')
+                if "Full answer" in col_types:
+                    row[f"FULL ANSWER: {t}"] = full
+                if "Code" in col_types:
                     row[f"CODE: {t}"] = (r.get('code') if r else '')
-                if include_ctx:
+                if "Top context" in col_types:
                     bc = (r.get('best_context') or [{}])[0] if r else {}
                     row[f"TOP CONTEXT: {t}"] = bc.get('context') or ''
-                if include_score:
+                if "Top context score" in col_types:
                     bc = (r.get('best_context') or [{}])[0] if r else {}
                     row[f"TOP CONTEXT SCORE: {t}"] = bc.get('score') if bc else ''
+                if "Validated" in col_types:
+                    # Use validation store if available
+                    val_data = _read_validation(selected_run)
+                    row[f"VALIDATED: {t}"] = bool(((val_data.get(paper) or {}).get(t)))
             out_rows.append(row)
         import pandas as pd
         out_df = pd.DataFrame(out_rows)
@@ -1852,16 +1990,7 @@ if page == "New Extraction":
             csv_text = out_df.to_csv(index=False, sep=CSV_DELIMITER)
             csv_bytes = csv_text.encode(CSV_ENCODING)
             st.download_button("Download CSV", data=csv_bytes, file_name=f"{selected_run}_results.csv", mime="text/csv", key="new_run_download_csv")
-            if save_to_disk:
-                try:
-                    out_dir = os.path.join(OUTPUT_DIR, selected_run)
-                    os.makedirs(out_dir, exist_ok=True)
-                    path = os.path.join(out_dir, f"{selected_run}_results.csv")
-                    with open(path, 'w', encoding=CSV_ENCODING, newline='') as f:
-                        f.write(csv_text)
-                    st.success(f"Saved: {path}")
-                except Exception as e:
-                    st.warning(f"Could not save CSV to disk: {e}")
+            # No additional save options
     else:
         st.info("No finished run detected yet.")
 
@@ -1913,22 +2042,45 @@ elif page == "Results Dashboard":
             fdf = df[df['paper'].isin(sel_papers)] if sel_papers else df
             visible_topics = [t for t in topic_columns if t in (sel_topics or topic_columns)]
 
-            # Header row: Paper | visible topics
-            header_cols = st.columns([1.2] + [2.2] * len(visible_topics))
+            # Pagination controls for topics (fields)
+            topics_per_page = st.number_input(
+                "Fields per page",
+                min_value=1,
+                max_value=50,
+                value=10,
+                step=1,
+                key="hist_topics_per_page",
+            )
+            num_pages = max(1, (len(visible_topics) + topics_per_page - 1) // topics_per_page)
+            page_index = st.number_input(
+                "Page",
+                min_value=1,
+                max_value=num_pages,
+                value=1,
+                step=1,
+                key="hist_topics_page",
+            )
+            start_idx = (page_index - 1) * topics_per_page
+            end_idx = start_idx + topics_per_page
+            page_topics = visible_topics[start_idx:end_idx]
+            st.caption(f"Showing fields {start_idx + 1}–{min(end_idx, len(visible_topics))} of {len(visible_topics)}")
+
+            # Header row: Paper | paginated topics
+            header_cols = st.columns([1.2] + [2.2] * len(page_topics))
             with header_cols[0]:
                 st.markdown("**Paper**")
-            for j, t in enumerate(visible_topics):
+            for j, t in enumerate(page_topics):
                 with header_cols[j+1]:
                     st.markdown(f"**{t}**")
 
             # Data rows
             for ridx, row in fdf.iterrows():
                 paper_nm = row['paper']
-                row_cols = st.columns([1.2] + [2.2] * len(visible_topics))
+                row_cols = st.columns([1.2] + [2.2] * len(page_topics))
                 with row_cols[0]:
                     short_paper = (paper_nm[:26] + '…') if len(paper_nm) > 28 else paper_nm
                     st.write(short_paper)
-                for j, t in enumerate(visible_topics):
+                for j, t in enumerate(page_topics):
                     ans_preview = str(row.get(t, '') or '')
                     label = (ans_preview[:85] + '…') if len(ans_preview) > 88 else (ans_preview or "(empty)")
                     btn_key = f"hist_tbl_btn__{paper_nm}__{t}__{ridx}__{j}"
@@ -2003,9 +2155,11 @@ elif page == "Results Dashboard":
                     fu_mode = st.selectbox("Mode", options=["Quick", "Iterative (2 steps)"] , key="hist_insp_fu_mode")
                 with fu_cols[2]:
                     ask = st.button("Ask", key="hist_insp_fu_ask")
+                    fu_status = st.empty()
                 if ask and (fu_q or '').strip():
-                    with st.spinner("Querying index…"):
-                        resp = _run_followup_query(paper, fu_q.strip(), fu_mode)
+                    fu_status.info("Querying index…")
+                    resp = _run_followup_query(paper, fu_q.strip(), fu_mode)
+                    fu_status.empty()
                     st.markdown("**Follow-up Answer**")
                     st.write(resp.get('answer') or '')
                     st.markdown("**Supporting contexts**")
@@ -2025,11 +2179,14 @@ elif page == "Results Dashboard":
                 else:
                     st.markdown("---")
                     _render_inspector_body_hist(ipaper, itopic)
+                # Close inspector after rendering to avoid re-opening on refresh
+                st.session_state['inspector_open'] = False
         else:
             st.warning("No answers found for this run. Ensure the run completed and wrote <paper>_result.json files.")
 
         st.markdown("---")
         st.markdown("### Export CSV")
+        st.caption("Choose which papers, fields, and columns to include in the CSV.")
         # Paper and field selection for export
         hist_exp_papers = st.multiselect(
             "Select papers to include",
@@ -2038,15 +2195,20 @@ elif page == "Results Dashboard":
             key="hist_exp_papers",
         )
         exp_cols = st.multiselect("Select fields (topics) to include", options=topic_columns, default=topic_columns, key="hist_exp_cols")
-        col_flags = st.columns(3)
-        with col_flags[0]:
-            include_code = st.checkbox("Include code columns", value=False, key="hist_include_code")
-        with col_flags[1]:
-            include_ctx = st.checkbox("Include top context", value=False, key="hist_include_ctx")
-        with col_flags[2]:
-            include_score = st.checkbox("Include top context score", value=False, key="hist_include_score")
-
-        save_to_disk = st.checkbox("Also save to this run's folder", value=False, key="hist_save_disk")
+        col_types = st.multiselect(
+            "Columns to include per field",
+            options=[
+                "Concise answer",
+                "Full answer",
+                "Code",
+                "Top context",
+                "Top context score",
+                "Validated",
+            ],
+            default=["Full answer"],
+            key="hist_col_types",
+            help="Pick which columns you want for each field in the CSV.",
+        )
         out_rows: List[Dict[str, Any]] = []
         for paper, payload in data.items():
             if hist_exp_papers and paper not in hist_exp_papers:
@@ -2056,18 +2218,22 @@ elif page == "Results Dashboard":
             row: Dict[str, Any] = {"paper": paper}
             for t in exp_cols:
                 r = by_topic.get(t)
-                conc = r.get('answer_concise') or ''
                 full = r.get('answer') or ''
-                row[f"CONCISE ANSWER: {t}"] = conc
-                row[f"FULL ANSWER: {t}"] = full
-                if include_code:
+                if "Concise answer" in col_types:
+                    row[f"CONCISE ANSWER: {t}"] = (r.get('answer_concise') if r else '')
+                if "Full answer" in col_types:
+                    row[f"FULL ANSWER: {t}"] = full
+                if "Code" in col_types:
                     row[f"CODE: {t}"] = (r.get('code') if r else '')
-                if include_ctx:
+                if "Top context" in col_types:
                     bc = (r.get('best_context') or [{}])[0] if r else {}
                     row[f"TOP CONTEXT: {t}"] = bc.get('context') or ''
-                if include_score:
+                if "Top context score" in col_types:
                     bc = (r.get('best_context') or [{}])[0] if r else {}
                     row[f"TOP CONTEXT SCORE: {t}"] = bc.get('score') if bc else ''
+                if "Validated" in col_types:
+                    val_data = _read_validation(selected_run)
+                    row[f"VALIDATED: {t}"] = bool(((val_data.get(paper) or {}).get(t)))
             out_rows.append(row)
         import pandas as pd
         out_df = pd.DataFrame(out_rows)
@@ -2078,16 +2244,6 @@ elif page == "Results Dashboard":
             csv_text = out_df.to_csv(index=False, sep=CSV_DELIMITER)
             csv_bytes = csv_text.encode(CSV_ENCODING)
             st.download_button("Download CSV", data=csv_bytes, file_name=f"{selected_run}_results.csv", mime="text/csv", key="hist_download_csv")
-            if save_to_disk:
-                try:
-                    out_dir = os.path.join(OUTPUT_DIR, selected_run)
-                    os.makedirs(out_dir, exist_ok=True)
-                    path = os.path.join(out_dir, f"{selected_run}_results.csv")
-                    with open(path, 'w', encoding=CSV_ENCODING, newline='') as f:
-                        f.write(csv_text)
-                    st.success(f"Saved: {path}")
-                except Exception as e:
-                    st.warning(f"Could not save CSV to disk: {e}")
 
 elif page == "Settings":
     st.subheader("Settings (view only)")

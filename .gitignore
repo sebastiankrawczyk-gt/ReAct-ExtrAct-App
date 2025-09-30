@@ -1,0 +1,8 @@
+
+# Ignore run artifacts
+output/
+storage/
+streamlit.log
+
+# Ignore local venv
+.venv/
