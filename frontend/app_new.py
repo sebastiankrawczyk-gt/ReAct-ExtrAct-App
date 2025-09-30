@@ -1203,6 +1203,8 @@ if page == "New Extraction":
     # In-wizard controls
     st.markdown("### Step 1: Setup Project")
     st.info("First, give your project a name and upload the source documents (PDFs) that will form your corpus.")
+    with st.expander("Demonstration Video (optional)", expanded=False):
+        st.video("https://youtu.be/_Mr09yTafEE")
     # Project name
     proj_cols = st.columns([2, 2, 2])
     with proj_cols[0]:
