@@ -1768,8 +1768,8 @@ if page == "New Extraction":
             row = {"paper": paper}
             for t in topic_columns:
                 r = topic_to_row.get(t, {})
-                conc = (r.get('answer_concise') or '').strip()
-                full = (r.get('answer') or '').strip()
+                conc = _strip_think((r.get('answer_concise') or '').strip())
+                full = _strip_think((r.get('answer') or '').strip())
                 row[t] = (conc if conc else full)
             rows.append(row)
         if rows and topic_columns:
@@ -1824,7 +1824,7 @@ if page == "New Extraction":
                     short_paper = (paper_nm[:26] + '…') if len(paper_nm) > 28 else paper_nm
                     st.write(short_paper)
                 for j, t in enumerate(page_topics):
-                    ans_preview = str(row.get(t, '') or '')
+                    ans_preview = str(_strip_think(row.get(t, '') or ''))
                     label = (ans_preview[:85] + '…') if len(ans_preview) > 88 else (ans_preview or "(empty)")
                     btn_key = f"new_run_tbl_btn__{paper_nm}__{t}__{ridx}__{j}"
                     if row_cols[j+1].button(f"🔍 {label}", key=btn_key):
@@ -2038,8 +2038,8 @@ elif page == "Results Dashboard":
             row = {"paper": paper}
             for t in topic_columns:
                 r = topic_to_row.get(t, {})
-                conc = (r.get('answer_concise') or '').strip()
-                full = (r.get('answer') or '').strip()
+                conc = _strip_think((r.get('answer_concise') or '').strip())
+                full = _strip_think((r.get('answer') or '').strip())
                 row[t] = (conc if conc else full)
             rows.append(row)
         if rows and topic_columns:
@@ -2094,7 +2094,7 @@ elif page == "Results Dashboard":
                     short_paper = (paper_nm[:26] + '…') if len(paper_nm) > 28 else paper_nm
                     st.write(short_paper)
                 for j, t in enumerate(page_topics):
-                    ans_preview = str(row.get(t, '') or '')
+                    ans_preview = str(_strip_think(row.get(t, '') or ''))
                     label = (ans_preview[:85] + '…') if len(ans_preview) > 88 else (ans_preview or "(empty)")
                     btn_key = f"hist_tbl_btn__{paper_nm}__{t}__{ridx}__{j}"
                     if row_cols[j+1].button(f"🔍 {label}", key=btn_key):
