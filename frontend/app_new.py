@@ -98,6 +98,16 @@ def _ensure_dirs() -> None:
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 
+def _strip_think(text: str) -> str:
+    try:
+        if not isinstance(text, str) or not text:
+            return text
+        import re as _re
+        return _re.sub(r"(?is)<\s*think\s*>[\s\S]*?<\s*/\s*think\s*>", "", text).strip()
+    except Exception:
+        return text
+
+
 def _clear_inspector_state() -> None:
     try:
         st.session_state.pop('inspector_open', None)
@@ -1859,11 +1869,13 @@ if page == "New Extraction":
                 result = _find_result_for_topic_new(payload, topic)
                 st.markdown(f"### 🔎 Inspector — {paper} · {topic}")
                 # Answers (concise, full, code) first
-                if (result.get('answer_concise') or '').strip():
+                ca = _strip_think(result.get('answer_concise') or '')
+                fa = _strip_think(result.get('answer') or '')
+                if ca.strip():
                     st.markdown("**Concise Answer**")
-                    st.write(result.get('answer_concise') or '')
+                    st.write(ca)
                 st.markdown("**Full Answer**")
-                st.write(result.get('answer') or '')
+                st.write(fa)
                 if (result.get('code') or '').strip():
                     st.markdown("**Code**")
                     st.write(result.get('code') or '')
@@ -2127,11 +2139,13 @@ elif page == "Results Dashboard":
                 result = _find_result_for_topic(payload, topic)
                 st.markdown(f"### 🔎 Inspector — {paper} · {topic}")
                 # Answers (concise, full, code) first
-                if (result.get('answer_concise') or '').strip():
+                ca = _strip_think(result.get('answer_concise') or '')
+                fa = _strip_think(result.get('answer') or '')
+                if ca.strip():
                     st.markdown("**Concise Answer**")
-                    st.write(result.get('answer_concise') or '')
+                    st.write(ca)
                 st.markdown("**Full Answer**")
-                st.write(result.get('answer') or '')
+                st.write(fa)
                 if (result.get('code') or '').strip():
                     st.markdown("**Code**")
                     st.write(result.get('code') or '')
