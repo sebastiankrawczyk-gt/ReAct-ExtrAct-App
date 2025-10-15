@@ -1322,15 +1322,15 @@ if page == "New Extraction":
         st.session_state['wiz_queries'].append({"topic": "", "possible_options": "None"})
         st.rerun()
     st.markdown("<div id='save-fields-marker'></div>", unsafe_allow_html=True)
-    if st.button("❗ Save Fields (important before start!)", type="primary"):
+    if st.button("❗ Save Extraction Fields", type="primary"):
         _write_queries_py(q_rows)
         st.session_state['wiz_queries'] = list(q_rows)
-        st.success("Overwrote config/queries.py")
+        st.success("Saved extraction fields to config/queries.py")
     st.markdown("<div id='delete-all-marker'></div>", unsafe_allow_html=True)
-    if st.button("🗑️ Delete All Fields"):
+    if st.button("🗑️ Clear All Fields"):
         st.session_state['wiz_queries'] = []
         _write_queries_py([])
-        st.success("Cleared all fields")
+        st.success("All extraction fields cleared")
         st.rerun()
 
     st.markdown("---")
