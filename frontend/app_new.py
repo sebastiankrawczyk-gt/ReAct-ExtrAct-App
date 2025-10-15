@@ -1322,15 +1322,9 @@ if page == "New Extraction":
         st.session_state['wiz_queries'].append({"topic": "", "possible_options": "None"})
         st.rerun()
     st.markdown("<div id='save-fields-marker'></div>", unsafe_allow_html=True)
-    if st.button("❗ Save Fields (important before start!)"):
-        cleaned_rows: List[Dict[str, Any]] = []
-        for row in q_rows:
-            cleaned_rows.append({
-                "topic": _clean_field_text(row.get("topic", "")),
-                "possible_options": _clean_field_text(row.get("possible_options", "None")) or "None",
-            })
-        _write_queries_py(cleaned_rows)
-        st.session_state['wiz_queries'] = list(cleaned_rows)
+    if st.button("❗ Save Fields (important before start!)", type="primary"):
+        _write_queries_py(q_rows)
+        st.session_state['wiz_queries'] = list(q_rows)
         st.success("Overwrote config/queries.py")
     st.markdown("<div id='delete-all-marker'></div>", unsafe_allow_html=True)
     if st.button("🗑️ Delete All Fields"):
