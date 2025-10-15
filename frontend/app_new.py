@@ -108,19 +108,6 @@ def _strip_think(text: str) -> str:
         return text
 
 
-def _clean_field_text(text: str) -> str:
-    try:
-        if not isinstance(text, str):
-            return ''
-        text = _strip_think(text)
-        text = text.replace('\n', ' ').replace('\t', ' ')
-        import re as _re
-        text = _re.sub(r"\s+", " ", text).strip()
-        return text
-    except Exception:
-        return (text or '').strip()
-
-
 def _clear_inspector_state() -> None:
     try:
         st.session_state.pop('inspector_open', None)
@@ -1297,7 +1284,7 @@ if page == "New Extraction":
         st.info("No fields found. Default 5 will appear if config is empty.")
     # Removed tip per request
     for i, q in enumerate(st.session_state['wiz_queries']):
-        cols = st.columns([3, 3])
+        cols = st.columns([3, 3, 1])
         with cols[0]:
             topic = st.text_input(
                 f"Topic {i+1}",
@@ -1314,8 +1301,20 @@ if page == "New Extraction":
                 label_visibility="collapsed",
                 placeholder=f"Codes {i+1}",
             )
+        with cols[2]:
+            # Marker to let CSS position/style the delete button
+            st.markdown("<div class='del-marker'></div>", unsafe_allow_html=True)
+            if st.button("🗑️ Delete", key=f"wiz_del_{i}"):
+                _to_delete.append(i)
         q_rows.append({"topic": topic, "possible_options": opts})
-    # Per-field delete removed per request
+    if _to_delete:
+        # Remove in reverse order to preserve indices
+        for idx in sorted(_to_delete, reverse=True):
+            try:
+                del st.session_state['wiz_queries'][idx]
+            except Exception:
+                pass
+        st.rerun()
     # Buttons in requested order: Add, Save, Delete All (stacked vertically)
     st.markdown("<div id='add-field-marker'></div>", unsafe_allow_html=True)
     if st.button("➕ Add New Field"):
@@ -1323,14 +1322,8 @@ if page == "New Extraction":
         st.rerun()
     st.markdown("<div id='save-fields-marker'></div>", unsafe_allow_html=True)
     if st.button("❗ Save Fields (important before start!)"):
-        cleaned_rows: List[Dict[str, Any]] = []
-        for row in q_rows:
-            cleaned_rows.append({
-                "topic": _clean_field_text(row.get("topic", "")),
-                "possible_options": _clean_field_text(row.get("possible_options", "None")) or "None",
-            })
-        _write_queries_py(cleaned_rows)
-        st.session_state['wiz_queries'] = list(cleaned_rows)
+        _write_queries_py(q_rows)
+        st.session_state['wiz_queries'] = list(q_rows)
         st.success("Overwrote config/queries.py")
     st.markdown("<div id='delete-all-marker'></div>", unsafe_allow_html=True)
     if st.button("🗑️ Delete All Fields"):
