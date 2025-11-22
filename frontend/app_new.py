@@ -25,7 +25,7 @@ def _apply_streamlit_secrets_to_env() -> None:
         if not secrets:
             return
         keys = [
-            'OPENROUTER_API_KEY','OPENAI_API_KEY','LLAMA_CLOUD_API_KEY','COHERE_API_KEY','GROQ_API_KEY',
+            'OPENROUTER_API_KEY','OPENAI_API_KEY','LLAMA_CLOUD_API_KEY',
             'ALLOW_WRITE_KEYS_FILE','EVALUATION','RAGAS','G_EVAL','CLEAR_STORAGE','COHERE_RERANK',
             'INPUT_PATH','OUTPUT_PATH','STORAGE_PATH',
         ]
@@ -108,6 +108,19 @@ def _strip_think(text: str) -> str:
         return text
 
 
+def _clean_field_text(text: str) -> str:
+    try:
+        if not isinstance(text, str):
+            return ''
+        text = _strip_think(text)
+        text = text.replace('\n', ' ').replace('\t', ' ')
+        import re as _re
+        text = _re.sub(r"\s+", " ", text).strip()
+        return text
+    except Exception:
+        return (text or '').strip()
+
+
 def _clear_inspector_state() -> None:
     try:
         st.session_state.pop('inspector_open', None)
@@ -124,8 +137,6 @@ DEFAULT_API_KEYS: Dict[str, str] = {
     'OPENROUTER_API_KEY': os.getenv('OPENROUTER_API_KEY', ''),
     'OPENAI_API_KEY': os.getenv('OPENAI_API_KEY', ''),
     'LLAMA_CLOUD_API_KEY': os.getenv('LLAMA_CLOUD_API_KEY', ''),
-    'COHERE_API_KEY': os.getenv('COHERE_API_KEY', ''),
-    'GROQ_API_KEY': os.getenv('GROQ_API_KEY', ''),
 }
 
 
@@ -145,11 +156,6 @@ def _ensure_default_keys() -> None:
         _apply_keys_to_env(st.session_state['api_keys'])
     except Exception:
         pass
-
-
-def _ensure_keys_file_exists() -> None:
-    # Avoid persisting secrets to disk by default
-    return
 
 
 def _read_json(path: str) -> Any:
@@ -461,7 +467,7 @@ def _pick_main_script(mode: str) -> str:
 def _read_api_keys() -> Dict[str, str]:
     # Prefer environment, then in-session, then defaults. Optionally fill from local file.
     data: Dict[str, str] = {}
-    wanted = ['OPENROUTER_API_KEY','OPENAI_API_KEY','LLAMA_CLOUD_API_KEY','COHERE_API_KEY','GROQ_API_KEY','OLLAMA_BASE_URL']
+    wanted = ['OPENROUTER_API_KEY','OPENAI_API_KEY','LLAMA_CLOUD_API_KEY','OLLAMA_BASE_URL']
     for k in wanted:
         v = os.getenv(k) or (st.session_state.get('api_keys', {}).get(k) if 'api_keys' in st.session_state else None) or DEFAULT_API_KEYS.get(k, '')
         data[k] = v if isinstance(v, str) else ''
@@ -488,8 +494,6 @@ def _write_api_keys(keys: Dict[str, str]) -> None:
             'OPENROUTER_API_KEY': keys.get('OPENROUTER_API_KEY',''),
             'OPENAI_API_KEY': keys.get('OPENAI_API_KEY',''),
             'LLAMA_CLOUD_API_KEY': keys.get('LLAMA_CLOUD_API_KEY',''),
-            'COHERE_API_KEY': keys.get('COHERE_API_KEY',''),
-            'GROQ_API_KEY': keys.get('GROQ_API_KEY',''),
         }
     except Exception:
         pass
@@ -502,8 +506,6 @@ def _write_api_keys(keys: Dict[str, str]) -> None:
                 f"OPENROUTER_API_KEY = '{_read_api_keys().get('OPENROUTER_API_KEY','')}'\n",
                 f"OPENAI_API_KEY = '{_read_api_keys().get('OPENAI_API_KEY','')}'\n",
                 f"LLAMA_CLOUD_API_KEY = '{_read_api_keys().get('LLAMA_CLOUD_API_KEY','')}'\n",
-                f"COHERE_API_KEY = '{_read_api_keys().get('COHERE_API_KEY','')}'\n",
-                f"GROQ_API_KEY = '{_read_api_keys().get('GROQ_API_KEY','')}'\n",
             ]
             with open(path, 'w', encoding='utf-8') as f:
                 f.writelines(lines)
@@ -995,7 +997,6 @@ def _run_script(mode: str, state: RunState, eval_off: bool = False, clear_storag
 st.set_page_config(page_title="ReAct‑ExtrAct Runner", layout="wide", initial_sidebar_state="expanded")
 _ensure_dirs()
 _ensure_default_keys()
-_ensure_keys_file_exists()
 
 if 'run_state' not in st.session_state:
     st.session_state['run_state'] = RunState()
@@ -1085,19 +1086,7 @@ st.markdown(
         color: #ffffff !important;
     }
     #delete-all-marker ~ div.stButton button:hover { background-color: #e53935 !important; border-color: #e53935 !important; }
-    .del-marker ~ div.stButton button {
-        background-color: #d32f2f !important;
-        border-color: #d32f2f !important;
-        color: #ffffff !important;
-        margin-top: -37px !important;
-    }
-    .del-marker ~ div.stButton button:hover { background-color: #e53935 !important; border-color: #e53935 !important; }
-    /* Also shift the Streamlit button wrapper up to ensure movement */
-    .del-marker ~ div.stButton { margin-top: -38px !important; }
-    /* Align delete button vertically with inputs */
-    .del-marker { height: 0px; }
     /* Scoped color variants for specific buttons (override primary/secondary) */
-    /* EXCEPTIONS: force special wizard buttons */
     .btn-blue div.stButton > button[kind] {
         background-color: #1976d2 !important;
         border-color: #1976d2 !important;
@@ -1201,7 +1190,6 @@ with st.sidebar:
     st.markdown("- 🧭 Define data items (fields)")
     st.markdown("- ⚙️ Pick a mode: Naive RAG · Iterative RAG · ReAct‑ExtrAct")
     st.markdown("- ▶️ Run extraction and monitor progress")
-    st.markdown("- 🔎 Step 4: Select a run to inspect")
     st.markdown("- 📥 Export a CSV for analysis")
     st.markdown("---")
     st.caption("You can hide this panel to maximize workspace.")
@@ -1211,7 +1199,7 @@ with st.sidebar:
 # Handle demo run trigger
 if page == "New Extraction":
     # In-wizard controls
-    # Demonstration video above Step 1
+    # Demonstration video
     st.markdown("### Demonstration Video")
     st.warning("We would like to invite users to watch our demonstration video before trying our tool yourself.")
     st.video("https://youtu.be/_Mr09yTafEE")
@@ -1223,19 +1211,34 @@ if page == "New Extraction":
     with proj_cols[0]:
         project_name = st.text_input("Project name *", value=st.session_state.get('project_name',''), key="wiz_project_name", placeholder="e.g., my_research_project")
         st.session_state['project_name'] = project_name
-    # Upload PDFs
-    up_files = st.file_uploader("Upload PDFs", type=["pdf"], accept_multiple_files=True, key="wiz_upload")
-    if up_files:
-        # Clear input/ and copy uploaded files there (single input directory)
-        for f in os.listdir(INPUT_DIR):
-            try:
-                os.remove(os.path.join(INPUT_DIR, f))
-            except Exception:
-                pass
-        for up in up_files:
-            with open(os.path.join(INPUT_DIR, up.name), 'wb') as f:
-                f.write(up.read())
-        st.success(f"Selected {len(up_files)} file(s) for this run (saved in input/).")
+    # Demo mode toggle
+    demo_mode = st.toggle("Use example dataset", value=bool(st.session_state.get('use_demo', False)), key="wiz_demo")
+    st.session_state['use_demo'] = demo_mode
+    # Upload PDFs (disabled in demo mode)
+    if not demo_mode:
+        up_files = st.file_uploader("Upload PDFs", type=["pdf"], accept_multiple_files=True, key="wiz_upload")
+        if up_files:
+            # Clear input/ and copy uploaded files there (single input directory)
+            for f in os.listdir(INPUT_DIR):
+                try:
+                    os.remove(os.path.join(INPUT_DIR, f))
+                except Exception:
+                    pass
+            for up in up_files:
+                with open(os.path.join(INPUT_DIR, up.name), 'wb') as f:
+                    f.write(up.read())
+            st.success(f"Selected {len(up_files)} file(s) for this run (saved in input/).")
+    else:
+        # Show available demo PDFs
+        try:
+            demo_pdfs = [f for f in os.listdir(INPUT_DIR_DEMO) if f.lower().endswith('.pdf')]
+        except Exception:
+            demo_pdfs = []
+        if demo_pdfs:
+            st.success(f"Example dataset enabled. Using {len(demo_pdfs)} PDF(s).")
+            st.caption(", ".join(sorted(demo_pdfs)))
+        else:
+            st.warning("Example dataset enabled but no PDFs found. Add 5 sample PDFs to the example folder.")
 
     st.markdown("---")
     st.markdown("### Step 2: Define Extraction Fields")
@@ -1284,7 +1287,7 @@ if page == "New Extraction":
         st.info("No fields found. Default 5 will appear if config is empty.")
     # Removed tip per request
     for i, q in enumerate(st.session_state['wiz_queries']):
-        cols = st.columns([3, 3, 1])
+        cols = st.columns([3, 3])
         with cols[0]:
             topic = st.text_input(
                 f"Topic {i+1}",
@@ -1301,20 +1304,8 @@ if page == "New Extraction":
                 label_visibility="collapsed",
                 placeholder=f"Codes {i+1}",
             )
-        with cols[2]:
-            # Marker to let CSS position/style the delete button
-            st.markdown("<div class='del-marker'></div>", unsafe_allow_html=True)
-            if st.button("🗑️ Delete", key=f"wiz_del_{i}"):
-                _to_delete.append(i)
         q_rows.append({"topic": topic, "possible_options": opts})
-    if _to_delete:
-        # Remove in reverse order to preserve indices
-        for idx in sorted(_to_delete, reverse=True):
-            try:
-                del st.session_state['wiz_queries'][idx]
-            except Exception:
-                pass
-        st.rerun()
+    # Per-field delete removed per request
     # Buttons in requested order: Add, Save, Delete All (stacked vertically)
     st.markdown("<div id='add-field-marker'></div>", unsafe_allow_html=True)
     if st.button("➕ Add New Field"):
@@ -1362,8 +1353,7 @@ if page == "New Extraction":
         "ReAct-ExtrAct": "react_extract",
     }
     _rev_map = {v: k for k, v in _mode_map.items()}
-    # Hosted vs local notice (show above run mode)
-    st.error("You're currently using the hosted demo, which includes pre-configured API access for your convenience. Ollama as well as GROBID are not available in the hosted demo. To unlock full control and use your own keys and backends, we invite you to run the app locally.")
+    # Hosted-demo notice removed for local app experience
     _current_internal = st.session_state.get('mode', 'baseline')
     _current_label = _rev_map.get(_current_internal, "Naive RAG")
     mode_label = st.selectbox("Run mode", options=list(_mode_map.keys()), index=list(_mode_map.keys()).index(_current_label), key="wiz_mode")
@@ -1487,152 +1477,95 @@ if page == "New Extraction":
     st.session_state['rebuild_indexes'] = False
     run_btn = st.button("▶️ Start Extraction of Data", type="primary")
 
-# Handle demo run trigger (old)
-if False and demo_run and not state.running:
-    # require keys & at least one pdf
-    keys_now = {
-        'OPENROUTER_API_KEY': or_key,
-        'OPENAI_API_KEY': oa_key,
-        'LLAMA_CLOUD_API_KEY': lc_key,
-        'COHERE_API_KEY': co_key,
-    }
-    if not _keys_ready(keys_now):
-        state.progress_stage = 'Missing API keys. In this demo, keys are provided; please try again shortly.'
-    elif not any(name.lower().endswith('.pdf') for name in os.listdir(INPUT_DIR)):
-        state.progress_stage = 'No PDFs found in input/. Upload or copy demo files first.'
-    else:
-        # Initialize progress immediately
-        state.stdout = ''
-        state.stderr = ''
-        # Pre-compute planned steps (indexing + queries + eval)
-        try:
-            pdf_stems = [os.path.splitext(f)[0] for f in os.listdir(INPUT_DIR) if f.lower().endswith('.pdf')]
-        except Exception:
-            pdf_stems = []
-        storage_base = os.path.join(REPO_ROOT, 'storage', 'openrouter')
-        def _has_index_files(stem: str) -> bool:
-            p = os.path.join(storage_base, f"{stem}_vector_index")
-            return os.path.exists(os.path.join(p, 'docstore.json')) and os.path.exists(os.path.join(p, 'index_store.json'))
-        needs_build = []
-        idx_steps = 0
-        clear_storage_flag = bool(st.session_state.get('rebuild_indexes'))
-        if clear_storage_flag:
-            idx_steps = 3 * len(pdf_stems)
-            needs_build = list(pdf_stems)
-        else:
-            for stem in pdf_stems:
-                if _has_index_files(stem):
-                    idx_steps += 1
-                else:
-                    idx_steps += 3
-                    needs_build.append(stem)
-        try:
-            q_total = max(1, len(_read_current_queries()))
-        except Exception:
-            q_total = 5
-        query_steps = len(pdf_stems) * q_total
-        eval_off_flag = bool(st.session_state.get('eval_off'))
-        eval_steps = 0 if eval_off_flag else 1
-        state.idx_steps_total = idx_steps
-        state.query_steps_total = query_steps
-        state.eval_steps_total = eval_steps
-        state.steps_total = max(1, idx_steps + query_steps + eval_steps)
-        state.steps_done = 0
-        # Initial stage guess
-        if idx_steps > 0:
-            state.progress_stage = ('Parsing documents' if needs_build else 'Loading vector index')
-        elif query_steps > 0:
-            state.progress_stage = 'Querying your documents'
-        else:
-            state.progress_stage = 'Initializing...'
-        state.progress_pct = 1
-        state.started_at = time.time()
-        t = threading.Thread(target=_run_script, args=(st.session_state.get('demo_mode') or 'baseline', state, bool(st.session_state.get('eval_off')), bool(st.session_state.get('rebuild_indexes'))), daemon=True)
-        t.start()
-        st.rerun()
 
 if page == "New Extraction" and run_btn and not state.running:
     # Read keys from config/env
     keys_now = _read_api_keys()
     if not _keys_ready(keys_now):
         state.progress_stage = 'Missing API keys. In this demo, keys are provided; please try again shortly.'
-    elif not any(name.lower().endswith('.pdf') for name in os.listdir(INPUT_DIR)):
-        state.progress_stage = 'No PDFs found in input/. Upload files first.'
     else:
-        # Start background thread and initialize timer/progress immediately
-        state.stdout = ''
-        state.stderr = ''
-        # Pre-compute planned steps (indexing + queries + eval)
+        active_dir = INPUT_DIR_DEMO if bool(st.session_state.get('use_demo')) else INPUT_DIR
         try:
-            pdf_stems = [os.path.splitext(f)[0] for f in os.listdir(INPUT_DIR) if f.lower().endswith('.pdf')]
+            has_pdfs = any(name.lower().endswith('.pdf') for name in os.listdir(active_dir))
         except Exception:
-            pdf_stems = []
-        storage_base = os.path.join(REPO_ROOT, 'storage', 'openrouter')
-        def _has_index_files(stem: str) -> bool:
-            p = os.path.join(storage_base, f"{stem}_vector_index")
-            return os.path.exists(os.path.join(p, 'docstore.json')) and os.path.exists(os.path.join(p, 'index_store.json'))
-        needs_build = []
-        idx_steps = 0
-        clear_storage_flag = bool(st.session_state.get('rebuild_indexes'))
-        if clear_storage_flag:
-            idx_steps = 3 * len(pdf_stems)
-            needs_build = list(pdf_stems)
+            has_pdfs = False
+        if not has_pdfs:
+            state.progress_stage = ('No PDFs found in example dataset.' if bool(st.session_state.get('use_demo')) else 'No PDFs found in input/. Upload files first.')
         else:
-            for stem in pdf_stems:
-                if _has_index_files(stem):
-                    idx_steps += 1
-                else:
-                    idx_steps += 3
-                    needs_build.append(stem)
-        try:
-            q_total = max(1, len(_read_current_queries()))
-        except Exception:
-            q_total = 5
-        query_steps = len(pdf_stems) * q_total
-        eval_off_flag = bool(st.session_state.get('eval_off'))
-        eval_steps = 0 if eval_off_flag else 1
-        state.idx_steps_total = idx_steps
-        state.query_steps_total = query_steps
-        state.eval_steps_total = eval_steps
-        state.steps_total = max(1, idx_steps + query_steps + eval_steps)
-        state.steps_done = 0
-        if idx_steps > 0:
-            state.progress_stage = ('Parsing documents' if needs_build else 'Loading vector index')
-        elif query_steps > 0:
-            state.progress_stage = 'Querying your documents'
-        else:
-            state.progress_stage = 'Initializing...'
-        state.progress_pct = 1
-        state.started_at = time.time()
-        # Pass optional planner heuristic override to backend via environment for ReAct‑ExtrAct
-        try:
-            if st.session_state.get('mode') == 'react_extract':
-                _ph_text = str(st.session_state.get('react_planner_heuristics') or '').strip()
-                if _ph_text:
-                    os.environ['PLANNER_HEURISTICS_OVERRIDE'] = _ph_text
-                else:
-                    try:
-                        del os.environ['PLANNER_HEURISTICS_OVERRIDE']
-                    except Exception:
-                        pass
-        except Exception:
-            pass
-        # Ensure environment override points to single input directory
-        state.active_input_dir = INPUT_DIR
-        os.environ['INPUT_PATH'] = INPUT_DIR
-        # capture friendly run name: "<project> (<mode>, <N> PDFs)"
-        try:
-            proj = (st.session_state.get('project_name') or '').strip()
-            pdf_count = len(pdf_stems)
-            internal_mode = st.session_state.get('mode', 'baseline')
-            saved_name = f"{proj} ({internal_mode}, {pdf_count} PDFs)" if proj else f"{internal_mode} ({pdf_count} PDFs)"
-            state.run_name = saved_name
-        except Exception:
-            state.run_name = (st.session_state.get('project_name') or '').strip() or None
-        _mode_internal = st.session_state.get('mode', 'baseline')
-        t = threading.Thread(target=_run_script, args=(_mode_internal, state, bool(st.session_state.get('eval_off')), bool(st.session_state.get('rebuild_indexes'))), daemon=True)
-        t.start()
-        st.rerun()
+            # Start background thread and initialize timer/progress immediately
+            state.stdout = ''
+            state.stderr = ''
+            # Pre-compute planned steps (indexing + queries + eval)
+            try:
+                pdf_stems = [os.path.splitext(f)[0] for f in os.listdir(active_dir) if f.lower().endswith('.pdf')]
+            except Exception:
+                pdf_stems = []
+            storage_base = os.path.join(REPO_ROOT, 'storage', 'openrouter')
+            def _has_index_files(stem: str) -> bool:
+                p = os.path.join(storage_base, f"{stem}_vector_index")
+                return os.path.exists(os.path.join(p, 'docstore.json')) and os.path.exists(os.path.join(p, 'index_store.json'))
+            needs_build = []
+            idx_steps = 0
+            clear_storage_flag = bool(st.session_state.get('rebuild_indexes'))
+            if clear_storage_flag:
+                idx_steps = 3 * len(pdf_stems)
+                needs_build = list(pdf_stems)
+            else:
+                for stem in pdf_stems:
+                    if _has_index_files(stem):
+                        idx_steps += 1
+                    else:
+                        idx_steps += 3
+                        needs_build.append(stem)
+            try:
+                q_total = max(1, len(_read_current_queries()))
+            except Exception:
+                q_total = 5
+            query_steps = len(pdf_stems) * q_total
+            eval_off_flag = bool(st.session_state.get('eval_off'))
+            eval_steps = 0 if eval_off_flag else 1
+            state.idx_steps_total = idx_steps
+            state.query_steps_total = query_steps
+            state.eval_steps_total = eval_steps
+            state.steps_total = max(1, idx_steps + query_steps + eval_steps)
+            state.steps_done = 0
+            if idx_steps > 0:
+                state.progress_stage = ('Parsing documents' if needs_build else 'Loading vector index')
+            elif query_steps > 0:
+                state.progress_stage = 'Querying your documents'
+            else:
+                state.progress_stage = 'Initializing...'
+            state.progress_pct = 1
+            state.started_at = time.time()
+            # Pass optional planner heuristic override to backend via environment for ReAct‑ExtrAct
+            try:
+                if st.session_state.get('mode') == 'react_extract':
+                    _ph_text = str(st.session_state.get('react_planner_heuristics') or '').strip()
+                    if _ph_text:
+                        os.environ['PLANNER_HEURISTICS_OVERRIDE'] = _ph_text
+                    else:
+                        try:
+                            del os.environ['PLANNER_HEURISTICS_OVERRIDE']
+                        except Exception:
+                            pass
+            except Exception:
+                pass
+            # Ensure environment override points to selected input directory
+            state.active_input_dir = active_dir
+            os.environ['INPUT_PATH'] = active_dir
+            # capture friendly run name: "<project> (<mode>, <N> PDFs)"
+            try:
+                proj = (st.session_state.get('project_name') or '').strip()
+                pdf_count = len(pdf_stems)
+                internal_mode = st.session_state.get('mode', 'baseline')
+                saved_name = f"{proj} ({internal_mode}, {pdf_count} PDFs)" if proj else f"{internal_mode} ({pdf_count} PDFs)"
+                state.run_name = saved_name
+            except Exception:
+                state.run_name = (st.session_state.get('project_name') or '').strip() or None
+            _mode_internal = st.session_state.get('mode', 'baseline')
+            t = threading.Thread(target=_run_script, args=(_mode_internal, state, bool(st.session_state.get('eval_off')), bool(st.session_state.get('rebuild_indexes'))), daemon=True)
+            t.start()
+            st.rerun()
 
 
 if page == "New Extraction":

@@ -6,3 +6,4 @@ streamlit.log
 
 # Ignore local venv
 .venv/
+config/config_keys.py

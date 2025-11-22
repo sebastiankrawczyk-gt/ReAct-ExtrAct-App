@@ -30,7 +30,6 @@ from config.config import (
 from config.config_keys import (
     OPENAI_API_KEY,
     LLAMA_CLOUD_API_KEY,
-    COHERE_API_KEY,
     OPENROUTER_API_KEY,
 )
 
@@ -304,8 +303,16 @@ def _extract_gist(llm, raw_md_text: str) -> str:
         Paper (subset):
         {sample}
     """.strip()
-    with llm_slot():
-        return f"{llm.complete(prompt)!s}".strip()
+    try:
+        with llm_slot():
+            return f"{llm.complete(prompt)!s}".strip()
+    except Exception as e:
+        try:
+            print(f"[llm-error] gist failed: {e}")
+        except Exception:
+            pass
+        # fallback to first lines of markdown
+        return " ".join((sample or "").splitlines()[:5])[:600]
 
 
 # ---------------------------------------------
@@ -346,8 +353,15 @@ def _plan_topics_enhanced(llm, file_stem: str, topics: List[str]) -> Dict[str, A
     }}
     """.strip()
 
-    with llm_slot():
-        raw = f"{llm.complete(prompt)!s}".strip()
+    try:
+        with llm_slot():
+            raw = f"{llm.complete(prompt)!s}".strip()
+    except Exception as e:
+        try:
+            print(f"[llm-error] planner failed: {e}")
+        except Exception:
+            pass
+        raw = "{}"
     start = raw.find('{'); end = raw.rfind('}')
     json_str = raw[start:end+1] if start != -1 and end != -1 and end > start else raw
 
@@ -392,31 +406,6 @@ def _plan_topics_enhanced(llm, file_stem: str, topics: List[str]) -> Dict[str, A
 # ---------------------------------------------
 # C. Grouped Agent Execution
 # ---------------------------------------------
-
-def _intent_of(topic: str) -> str:
-    tl = (topic or "").lower()
-    if any(k in tl for k in ["metric", "score", "accuracy", "auc", "f1", "dice", "result", "performance"]):
-        return "metric"
-    if any(k in tl for k in ["dataset", "data set", "corpus", "size"]):
-        return "dataset"
-    if any(k in tl for k in ["model", "architecture", "approach", "method", "algorithm"]):
-        return "algorithm"
-    if any(k in tl for k in ["feature", "signal"]):
-        return "features"
-    if any(k in tl for k in ["social", "twitter", "facebook", "youtube", "reddit"]):
-        return "platform"
-    return "other"
-
-
-def _preferred_section_for(intent: str) -> Optional[str]:
-    return {
-        "metric": "Results",
-        "dataset": "Experiments",
-        "algorithm": "Methods",
-        "features": "Methods",
-        "platform": "Data",
-    }.get(intent)
-
 
 def _uniq_results(results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     seen_ids = set(); seen_txt = set(); out = []
@@ -714,7 +703,6 @@ def _refine_due_to_inconsistency(tools: ToolLibrary, topic: str, current_answer:
         merged_ev.extend(evidence[: max(0, 4 - len(merged_ev))])
     return {"answer": current_answer, "confidence": conf, "evidence": merged_ev, "validated": verdict.get("supported", False)}
 
-
 def _merge_results(base: Dict[str, Any], extra: Dict[str, Any]) -> Dict[str, Any]:
     out = dict(base or {})
     # preserve original answer
@@ -732,7 +720,6 @@ def _merge_results(base: Dict[str, Any], extra: Dict[str, Any]) -> Dict[str, Any
     checks = int((base or {}).get("consistency_checks") or 0)
     out["consistency_checks"] = checks + 1
     return out
-
 
 def run_agent_grouped(file_stem: str, query_engine, topics: List[str], plan: Dict[str, Any], out_dir: Optional[str] = None, trace=None) -> Dict[str, Any]:
     # Build section classification map and annotated tool wrapper
@@ -1195,7 +1182,7 @@ def main():
             pass
         query_engine = VectorQueryEngineCreator(
             llama_parse_api_key=LLAMA_CLOUD_API_KEY,
-            cohere_api_key=COHERE_API_KEY,
+            cohere_api_key=os.getenv('COHERE_API_KEY',''),
             input_path=INPUT_PATH,
             storage_path=STORAGE_PATH,
             cohere_rerank=False,

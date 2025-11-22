@@ -40,12 +40,10 @@ Then open http://localhost:8501.
 - Provide keys on the Settings page or via environment variables/.env:
   - `OPENROUTER_API_KEY` or `OPENAI_API_KEY`
   - `LLAMA_CLOUD_API_KEY` (for Llama Cloud parsing)
-  - `COHERE_API_KEY` (optional)
-- For local runs: set provider(s) to Ollama in Step 3 and configure GROBID (URL and toggle) if using local parsing.
+ - For local runs: set provider(s) to Ollama in Step 3 and configure GROBID (set `GROBID_URL` and toggle “Use GROBID”) if using local parsing.
 
 ## Using the UI (Workflow)
 The New Extraction page walks you through:
-- Demonstration Video (optional)
 - Step 1 — Setup Project: name your project and upload PDFs
 - Step 2 — Define Extraction Fields: enter topics and optional Codes
 - Step 3 — Configure & Run:
@@ -102,7 +100,6 @@ Notes:
    - `OPENROUTER_API_KEY`
    - `OPENAI_API_KEY`
    - `LLAMA_CLOUD_API_KEY`
-   - `COHERE_API_KEY` (optional)
 4) Optionally set environment variables in the app (Advanced settings), for example default providers/models if desired.
 5) Deploy. Open the URL and use the UI to upload PDFs, define fields, and run.
 
